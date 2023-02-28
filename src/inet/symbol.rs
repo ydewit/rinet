@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Binary};
 
 use super::{Polarity, BitSet16, BitSet8};
 
@@ -46,14 +46,17 @@ impl From<u8> for SymbolArity {
 #[derive(Clone,Copy, PartialEq)]
 pub struct SymbolPtr(u16);
 impl SymbolPtr {
-    const INDEX    : BitSet16 = BitSet16{ mask: 0b00011111_11111111, offset: 0 };
-    const POLARITY : BitSet16 = BitSet16{ mask: 0b001, offset: 13 };
-    const UNUSED   : BitSet16 = BitSet16{ mask: 0b11, offset: 14 };
+    const INDEX    : BitSet16<11> = BitSet16{ mask: 0b00000111_11111111, offset: 0 };
+    const POLARITY : BitSet16<1>  = BitSet16{ mask: 0b00001, offset: 11 };
+    const ARITY    : BitSet16<2>  = BitSet16{ mask: 0b0011, offset: 12 };
 
-    pub fn new(index: usize, polarity: Polarity) -> Self {
+    const PTR      : BitSet16<14> = BitSet16{ mask: 0b00111111_11111111, offset: 0 };
+
+    pub fn new(index: usize, arity: SymbolArity, polarity: Polarity) -> Self {
         let mut new = Self(0);
         new.set_index(index);
         new.set_polarity(polarity);
+        new.set_arity(arity);
         new
     }
 
@@ -77,22 +80,49 @@ impl SymbolPtr {
         self.0 = Self::INDEX.set(self.0, index as u16)
     }
 
+    pub fn get_arity(&self) -> SymbolArity {
+        SymbolArity::from(Self::ARITY.get(self.0))
+    }
+
+    fn set_arity(&mut self, arity: SymbolArity) {
+        self.0 |= Self::ARITY.set(self.0, arity as u16);
+    }
+
     #[inline]
+    pub fn get_ptr(&self) -> u16 {
+        Self::PTR.get(self.0)
+    }
+
+
     pub fn get_raw(&self) -> u16 {
         self.0
     }
+
 }
+
+impl Binary for SymbolPtr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:02b}_{:01b}_{:013b}", self.get_arity() as u8, self.get_polarity() as u8, self.get_index())
+    }
+}
+
 
 impl From<u64> for SymbolPtr {
     fn from(value: u64) -> Self {
-        assert!(Self::UNUSED.get(value as u16) == 0);
         SymbolPtr(value as u16)
+    }
+}
+
+impl Into<u64> for SymbolPtr {
+    fn into(self) -> u64 {
+        self.get_ptr() as u64
     }
 }
 
 impl Debug for SymbolPtr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut b = f.debug_struct("SymbolPtr");
+        let name = format!("SymbolPtr({:016b})", self.0);
+        let mut b = f.debug_struct(&name);
         b.field("polarity", &self.get_polarity());
         b.field("index", &self.get_index());
         b.finish()
@@ -103,10 +133,10 @@ impl Debug for SymbolPtr {
 pub struct Symbol(u8);
 impl Symbol {
     //                                              0bAAPLR???
-    const ARITY          : BitSet8 = BitSet8{ mask: 0b11, offset: 6 };
-    const POLARITY       : BitSet8 = BitSet8{ mask: 0b001, offset: 5 };
-    const LEFT_POLARITY  : BitSet8 = BitSet8{ mask: 0b0001, offset: 4 };
-    const RIGHT_POLARITY : BitSet8 = BitSet8{ mask: 0b00001, offset: 3 };
+    const ARITY          : BitSet8<2> = BitSet8{ mask: 0b11, offset: 6 };
+    const POLARITY       : BitSet8<1> = BitSet8{ mask: 0b001, offset: 5 };
+    const LEFT_POLARITY  : BitSet8<1> = BitSet8{ mask: 0b0001, offset: 4 };
+    const RIGHT_POLARITY : BitSet8<1> = BitSet8{ mask: 0b00001, offset: 3 };
 
     pub fn new0(polarity: Polarity) -> Self {
         let mut sym = Self(0);
@@ -177,13 +207,14 @@ impl Symbol {
 
     #[inline]
     pub fn to_ptr(&self, index: usize) -> SymbolPtr {
-        SymbolPtr::new(index, self.get_polarity())
+        SymbolPtr::new(index, self.get_arity(), self.get_polarity())
     }
 }
 
 impl Debug for Symbol {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut b = f.debug_struct("Symbol");
+        let name = format!("Symbol({:08b})", self.0);
+        let mut b = f.debug_struct(&name);
         b.field("arity", &self.get_arity());
         b.field("polarity", &self.get_polarity());
         match self.get_arity() {
@@ -311,16 +342,18 @@ mod tests {
 
     #[test]
     fn test_symbol_ptr_new0_neg() {
-        let ptr = SymbolPtr::new(1, Polarity::Neg);
+        let ptr = SymbolPtr::new(1, SymbolArity::One, Polarity::Neg);
         assert_eq!(ptr.get_index(), 1);
         assert_eq!(ptr.get_polarity(), Polarity::Neg);
+        assert_eq!(ptr.get_arity(), SymbolArity::One);
     }
 
     #[test]
     fn test_symbol_ptr_new0_pos() {
-        let ptr = SymbolPtr::new(1, Polarity::Pos);
+        let ptr = SymbolPtr::new(1, SymbolArity::Two, Polarity::Pos);
         assert_eq!(ptr.get_index(), 1);
         assert_eq!(ptr.get_polarity(), Polarity::Pos);
+        assert_eq!(ptr.get_arity(), SymbolArity::Two);
     }
 
     #[test]
@@ -456,14 +489,14 @@ mod tests {
 
     #[test]
     fn test_symbol_ptr_new_set_index() {
-        let mut ptr = SymbolPtr::new(0, Polarity::Pos);
+        let mut ptr = SymbolPtr::new(0, SymbolArity::Zero, Polarity::Pos);
         ptr.set_index(100);
         assert_eq!(ptr.get_index(), 100);
     }
 
     #[test]
     fn test_symbol_ptr_new_set_polarity() {
-        let mut ptr = SymbolPtr::new(0, Polarity::Pos);
+        let mut ptr = SymbolPtr::new(0, SymbolArity::One, Polarity::Pos);
         ptr.set_polarity(Polarity::Neg);
         assert_eq!(ptr.get_polarity(), Polarity::Neg);
     }
