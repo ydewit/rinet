@@ -7,6 +7,7 @@ pub mod net;
 pub mod rule;
 pub mod runtime;
 pub mod symbol;
+pub mod term;
 pub mod util;
 pub mod var;
 

@@ -1,10 +1,71 @@
+use std::{
+    fmt::Display,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
-use std::fmt::Display;
+use super::{
+    arena::ArenaIter,
+    cell::{Cell, CellItem, CellPtr, Cells, PortItem, PortPtr},
+    equation::{Equation, EquationPtr, Equations, EquationsItem},
+    symbol::{SymbolBook, SymbolPtr},
+    term::TermFamily,
+    var::{Var, VarItem, VarPtr, Vars, VarsItem},
+};
+#[derive(Debug, Copy, Clone)]
+pub struct NetF {}
+impl TermFamily for NetF {
+    type Store = NetStore;
 
-use super::{equation::{Equation, EquationPtr, Equations, EquationsItem}, cell::{Cell, CellPtr, PortPtr, Cells, CellItem}, var::{VarPtr, FVar, BVar, FVarPtr, BVarPtr, FVars, BVars, FreeStore, BoundStore, VarKind, VarsItem, VarStore}, symbol::{SymbolPtr, SymbolBook}, arena::ArenaIter, Polarity};
+    fn display_store(
+        f: &mut std::fmt::Formatter<'_>,
+        _: &Self::Store,
+        index: usize,
+    ) -> std::fmt::Result {
+        write!(f, "x.{}", index)
+    }
+}
+
+#[derive(Debug)]
+pub struct NetStore(AtomicU32);
+impl NetStore {
+    const NULL: u32 = u32::MAX;
+
+    pub fn get(&self) -> Option<CellPtr> {
+        match self.0.load(Ordering::SeqCst) {
+            Self::NULL => None,
+            ptr => Some(CellPtr::from(ptr)),
+        }
+    }
+
+    pub fn get_or_set(&self, cell_ptr: CellPtr) -> Option<CellPtr> {
+        match self.0.swap(cell_ptr.get_ptr(), Ordering::SeqCst) {
+            Self::NULL => None,
+            ptr => Some(CellPtr::from(ptr)),
+        }
+    }
+}
+
+impl Default for NetStore {
+    fn default() -> Self {
+        Self(AtomicU32::new(Self::NULL))
+    }
+}
+
+impl Vars<NetF> {
+    pub fn var(&mut self) -> VarPtr {
+        self.add(Var::new(NetStore::default()))
+    }
+
+    pub fn try_set(&mut self, var_ptr: VarPtr, cell_ptr: CellPtr) -> Option<CellPtr> {
+        match self.get(var_ptr).0.get_or_set(cell_ptr) {
+            Some(other_cell_ptr) => Some(other_cell_ptr),
+            None => None,
+        }
+    }
+}
 
 pub struct NetBuilder {
-    net: Net
+    net: Net,
 }
 impl NetBuilder {
     pub fn redex(&mut self, ctr: CellPtr, fun: CellPtr) -> EquationPtr {
@@ -39,15 +100,11 @@ impl NetBuilder {
 
     // -------------------
 
-    pub fn fvar(&mut self) -> FVarPtr {
-        self.net.fvars.add(FVar::default())
+    pub fn var(&mut self) -> VarPtr {
+        self.net.vars.add(Var::new(NetStore::default()))
     }
 
     // -------------------
-
-    pub fn bvar(&mut self) -> BVarPtr {
-        self.net.bvars.add(BVar::default())
-    }
 
     fn build(self) -> Net {
         self.net
@@ -56,253 +113,141 @@ impl NetBuilder {
 
 #[derive(Debug)]
 pub struct Net {
-    pub equations : Equations,
-    pub cells: Cells,
-    pub bvars: BVars,
-    pub fvars: FVars,
-    // symbols: &'a SymbolBook
+    pub head: Vec<VarPtr>,
+    pub equations: Equations<NetF>,
+    pub cells: Cells<NetF>,
+    pub vars: Vars<NetF>,
 }
 impl Net {
     pub fn new<F: FnOnce(&mut NetBuilder)>(builderFn: F) -> Self {
-        Net::with_capacity([0,0,0,0], builderFn)
+        Net::with_capacity([0, 0, 0], builderFn)
     }
 
-    pub fn with_capacity<F: FnOnce(&mut NetBuilder)>(capacity: [usize;4], builderFn: F) -> Self {
-        let mut builder = NetBuilder { net: Net {
-            equations: Equations::with_capacity(capacity[0]),
-            cells: Cells::with_capacity(capacity[1]),
-            bvars: BVars::with_capacity(capacity[2]),
-            fvars: FVars::with_capacity(capacity[3]),
-            // symbols
-        } };
+    pub fn with_capacity<F: FnOnce(&mut NetBuilder)>(capacity: [usize; 3], builderFn: F) -> Self {
+        let mut builder = NetBuilder {
+            net: Net {
+                head: Vec::new(),
+                equations: Equations::with_capacity(capacity[0]),
+                cells: Cells::with_capacity(capacity[1]),
+                vars: Vars::with_capacity(capacity[2]),
+                // symbols
+            },
+        };
         builderFn(&mut builder);
         builder.build()
     }
 
     // Equations --------------------------
 
-    pub fn equations(&self) -> ArenaIter<Equation,EquationPtr> {
+    pub fn equations(&self) -> ArenaIter<Equation<NetF>, EquationPtr> {
         self.equations.iter()
     }
 
-    pub fn get_equation(&self, equation: EquationPtr) -> &Equation {
+    pub fn get_equation(&self, equation: EquationPtr) -> Equation<NetF> {
         self.equations.get(equation)
     }
 
     // Cells --------------------------
 
-
-    pub fn cells(&self) -> ArenaIter<Cell,CellPtr> {
+    pub fn cells(&self) -> ArenaIter<Cell<NetF>, CellPtr> {
         self.cells.iter()
     }
 
-    pub fn get_cell(&self, cell: CellPtr) -> &Cell {
-        &self.cells.get(cell)
+    pub fn get_cell(&self, cell: CellPtr) -> Cell<NetF> {
+        self.cells.get(cell)
     }
 
     // FVars --------------------------
 
-
-    // pub fn fvar(&mut self) -> FVarPtr {
-    //     self.fvars.add(FVar::default())
-    // }
-
-    pub fn fvars(&self) -> ArenaIter<FVar,FVarPtr> {
-        self.fvars.iter()
+    pub fn vars(&self) -> ArenaIter<Var<NetF>, VarPtr> {
+        self.vars.iter()
     }
 
-    pub fn get_fvar(&self, ptr: FVarPtr) -> &FVar {
-        self.fvars.get(ptr)
+    pub fn get_fvar(&self, ptr: VarPtr) -> &Var<NetF> {
+        &self.vars.get(ptr)
     }
 
-    // BVars ------
-
-    // pub fn bvar(&mut self) -> BVarPtr {
-    //     self.bvars.add(BVar::default())
-    // }
-
-    // pub fn alloc_bvars(&mut self, count: usize) ->  &[Option<BVarPtr>]{
-    //     // TODO allocate new bvars in the stack!
-    //     let bvars = SmallVector::<Option<BVarPtr>, 10>::new(None, count);
-    //     for i in bvars.as_mut_slice() {
-    //         let var =  self.bvar();
-    //         *i = Some(var);
-    //     }
-    //     bvars.as_slice()
-    // }
-
-    pub fn bvars(&self) -> ArenaIter<BVar,BVarPtr> {
-        self.bvars.iter()
-    }
-
-    pub fn get_bvar(&self, ptr: BVarPtr) -> &BVar {
-        self.bvars.get(ptr)
-    }
-
-    // ------------------------
-
-    // pub(crate) fn try_set_var(&self, var_ptr: VarPtr, cell_ptr: CellPtr) -> Option<CellPtr> {
-    //     assert!(cell_ptr.get_polarity() == Polarity::Pos);
-    //     match var_ptr.get_kind() {
-    //         VarKind::Bound => {
-    //             let bvar = self.bvars.get(var_ptr.into());
-    //             bvar.get_store().try_set(cell_ptr)
-    //         }
-    //         VarKind::Free => {
-    //             let fvar = self.fvars.get(var_ptr.into());
-    //             fvar.get_store().send(cell_ptr);
-    //             None
-    //         },
-    //     }
-    // }
-
-    // pub(crate) fn try(&self, var_ptr: VarPtr) -> Option<CellPtr> {
-    //     match var_ptr.get_kind() {
-    //         VarKind::Bound => {
-    //             let bvar = self.bvars.get(var_ptr.into());
-    //             bvar.get_store().try_get()
-    //         },
-    //         VarKind::Free => {
-    //             let fvar = self.fvars.get(var_ptr.into());
-    //             fvar.get_store().try_receive()
-    //         }
-    //     }
-    // }
-
-    // pub fn walk<V: NetVisitor>(&self, visitor: V) {
-    //     for eqn_ptr in self.equations() {
-    //         self.walk_equation(visitor, eqn_ptr, &self.get_equation(eqn_ptr));
-    //     }
-    // }
-
-    // pub fn walk_equation<V: NetVisitor>(&self, visitor: V, eqn_ptr: EquationPtr, eqn: &Equation) {
-    //     match eqn.get_kind() {
-    //         EquationKind::Redex => {
-    //             let ctr_ptr = eqn.get_redex_ctr();
-    //             let fun_ptr = eqn.get_redex_fun();
-    //             if visitor.visit_redex(eqn_ptr, ctr_ptr, fun_ptr) {
-    //                 self.walk_cell(visitor, ctr_ptr);
-    //                 self.walk_cell(visitor, fun_ptr);
-    //             }
-    //         },
-    //         EquationKind::Bind => {
-    //             let var_ptr = eqn.get_bind_var();
-    //             let cell_ptr = eqn.get_bind_cell();
-    //             if visitor.visit_bind(eqn_ptr, var_ptr, cell_ptr) {
-    //                 self.walk_var(visitor, var_ptr);
-    //                 self.walk_cell(visitor, cell_ptr);
-    //             }
-    //         },
-    //         EquationKind::Connect => {
-    //             let left_ptr = eqn.get_connect_left();
-    //             let right_ptr = eqn.get_connect_right();
-    //             if visitor.visit_connect(eqn_ptr, left_ptr, right_ptr) {
-    //                 self.walk_var(visitor, left_ptr);
-    //                 self.walk_var(visitor, right_ptr);
-    //             }
-    //         },
-    //     }
-    // }
-
-    // fn walk_cell<V: NetVisitor>(&self, visitor: V, cell_ptr: CellPtr) {
-    //     let cell = self.get_cell(cell_ptr);
-    //     match cell.get_symbol().get_arity() {
-    //         SymbolArity::Zero => visitor.visit_cell0(cell_ptr, cell.get_symbol()),
-    //         SymbolArity::One => {
-    //             let port_ptr = cell.get_left_port();
-    //             if visitor.visit_cell1(cell_ptr, cell.get_symbol(), port_ptr) {
-    //                 self.walk_port(visitor, port_ptr);
-    //             }
-    //         },
-    //         SymbolArity::Two => {
-    //             let left_ptr = cell.get_left_port();
-    //             let right_ptr = cell.get_right_port();
-    //             if visitor.visit_cell2(cell_ptr, cell.get_symbol(), left_ptr, right_ptr) {
-    //                 self.walk_port(visitor, left_ptr);
-    //                 self.walk_port(visitor, right_ptr);
-    //             }
-    //         },
-    //     }
-    // }
-
-    // fn walk_port<V: NetVisitor>(&self, visitor: V, port_ptr: PortPtr) {
-    //     match port_ptr.get_kind() {
-    //         PortKind::Cell => self.walk_cell(visitor, port_ptr.get_cell()),
-    //         PortKind::Var => self.walk_var(visitor, port_ptr.get_var())
-    //     }
-    // }
-
-    // fn walk_var<V: NetVisitor>(&self, visitor: V, var_ptr: VarPtr) {
-    //     match var_ptr.is_free() {
-    //         true => self.walk_fvar(visitor, var_ptr.into()),
-    //         false => self.walk_bvar(visitor, var_ptr.into()),
-    //     }
-    // }
-
-    // fn walk_fvar<V: NetVisitor>(&self, visitor: V, var_ptr: FVarPtr) {
-    //     visitor.visit_fvar(var_ptr, self.get_fvar(var_ptr));
-    // }
-
-    // fn walk_bvar<V: NetVisitor>(&self, visitor: V, var_ptr: BVarPtr) {
-    //     visitor.visit_bvar(var_ptr, self.get_bvar(var_ptr));
-    // }
-}
-
-impl Net {
-    pub fn display_cell<'a>(&'a self, symbols: &'a SymbolBook, cell_ptr: CellPtr) -> CellItem {
+    pub fn display_cell<'a>(
+        &'a self,
+        symbols: &'a SymbolBook,
+        cell_ptr: CellPtr,
+    ) -> CellItem<NetF> {
         CellItem {
             cell_ptr,
             symbols: symbols,
             cells: &self.cells,
-            bvars: &self.bvars,
-            fvars: &self.fvars,
-        }
-    }
-}
-pub struct NetItem<'a> {
-    symbols: &'a SymbolBook,
-    net: &'a Net
-}
-impl<'a> NetItem<'a> {
-    pub fn new(symbols: &'a SymbolBook, net: &'a Net) -> Self {
-        Self {
-            symbols,
-            net
+            vars: &self.vars,
         }
     }
 
-    pub fn to_cell_item(&self, cell_ptr: CellPtr) -> CellItem {
+    pub fn display_port<'a>(
+        &'a self,
+        symbols: &'a SymbolBook,
+        port_ptr: PortPtr,
+    ) -> PortItem<NetF> {
+        PortItem {
+            port_ptr,
+            symbols: symbols,
+            cells: &self.cells,
+            vars: &self.vars,
+        }
+    }
+
+    pub fn display_var<'a>(&'a self, symbols: &'a SymbolBook, var_ptr: VarPtr) -> VarItem<NetF> {
+        VarItem {
+            var_ptr,
+            vars: &self.vars,
+        }
+    }
+}
+
+pub struct NetItem<'a> {
+    symbols: &'a SymbolBook,
+    net: &'a Net,
+}
+
+impl<'a> NetItem<'a> {
+    pub fn new(symbols: &'a SymbolBook, net: &'a Net) -> Self {
+        Self { symbols, net }
+    }
+
+    pub fn to_cell_item(&self, cell_ptr: CellPtr) -> CellItem<NetF> {
         CellItem {
             cell_ptr,
             symbols: self.symbols,
             cells: &self.net.cells,
-            bvars: &self.net.bvars,
-            fvars: &self.net.fvars,
+            vars: &self.net.vars,
         }
     }
 
-    fn to_vars_item(&self, kind: VarKind) -> VarsItem {
-        VarsItem { kind, fvars: &self.net.fvars, bvars: &self.net.bvars }
+    fn to_vars_item(&self) -> VarsItem<NetF> {
+        VarsItem {
+            vars: &self.net.vars,
+        }
     }
 
-    fn to_equations_item(&self) -> EquationsItem {
+    fn to_equations_item(&self) -> EquationsItem<NetF> {
         EquationsItem {
             symbols: self.symbols,
             equations: &self.net.equations,
             cells: &self.net.cells,
-            bvars: &self.net.bvars,
-            fvars: &self.net.fvars,
+            vars: &self.net.vars,
         }
     }
 }
+
 impl<'a> Display for NetItem<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "< {} | {} >", self.to_vars_item(VarKind::Free), self.to_equations_item())
+        write!(
+            f,
+            "< {} | {} >",
+            self.to_vars_item(),
+            self.to_equations_item()
+        )
     }
 }
 
-
-pub trait NetVisitor<F: VarStore = FreeStore,B: VarStore = BoundStore> {
+pub trait NetVisitor<T: TermFamily> {
     fn visit_redex(&mut self, eqn_ptr: EquationPtr, ctr: CellPtr, fun: CellPtr) -> bool {
         true
     }
@@ -315,20 +260,21 @@ pub trait NetVisitor<F: VarStore = FreeStore,B: VarStore = BoundStore> {
         true
     }
 
-    fn visit_cell0(&mut self, cell_ptr: CellPtr, sym_ptr: SymbolPtr) {
-    }
+    fn visit_cell0(&mut self, cell_ptr: CellPtr, sym_ptr: SymbolPtr) {}
 
     fn visit_cell1(&mut self, cell_ptr: CellPtr, sym_ptr: SymbolPtr, port: PortPtr) -> bool {
         true
     }
 
-    fn visit_cell2(&mut self, cell_ptr: CellPtr, sym_ptr: SymbolPtr, left: PortPtr, right: PortPtr) -> bool {
+    fn visit_cell2(
+        &mut self,
+        cell_ptr: CellPtr,
+        sym_ptr: SymbolPtr,
+        left: PortPtr,
+        right: PortPtr,
+    ) -> bool {
         true
     }
 
-    fn visit_fvar(&mut self, var_ptr: FVarPtr, fvar: &FVar<F>) {
-    }
-
-    fn visit_bvar(&mut self, var_ptr: BVarPtr, bvar: &BVar<B>) {
-    }
+    fn visit_var(&mut self, var_ptr: VarPtr, fvar: &Var<T>) {}
 }

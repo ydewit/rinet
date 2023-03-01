@@ -1,13 +1,12 @@
-use std::fmt::{Debug, Display, Formatter, Binary};
+use std::fmt::{Binary, Debug, Display, Formatter};
 
-use super::{Polarity, BitSet16, BitSet8};
+use super::{BitSet16, BitSet8, Polarity};
 
-
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum SymbolArity {
     Zero = 0,
     One = 1,
-    Two = 2
+    Two = 2,
 }
 
 impl From<u64> for SymbolArity {
@@ -16,7 +15,7 @@ impl From<u64> for SymbolArity {
             0 => SymbolArity::Zero,
             1 => SymbolArity::One,
             2 => SymbolArity::Two,
-            _ => panic!()
+            _ => panic!(),
         }
     }
 }
@@ -27,7 +26,7 @@ impl From<u16> for SymbolArity {
             0 => SymbolArity::Zero,
             1 => SymbolArity::One,
             2 => SymbolArity::Two,
-            _ => panic!()
+            _ => panic!(),
         }
     }
 }
@@ -38,19 +37,31 @@ impl From<u8> for SymbolArity {
             0 => SymbolArity::Zero,
             1 => SymbolArity::One,
             2 => SymbolArity::Two,
-            _ => panic!()
+            _ => panic!(),
         }
     }
 }
 
-#[derive(Clone,Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct SymbolPtr(u16);
 impl SymbolPtr {
-    const INDEX    : BitSet16<11> = BitSet16{ mask: 0b00000111_11111111, offset: 0 };
-    const POLARITY : BitSet16<1>  = BitSet16{ mask: 0b00001, offset: 11 };
-    const ARITY    : BitSet16<2>  = BitSet16{ mask: 0b0011, offset: 12 };
+    const INDEX: BitSet16<11> = BitSet16 {
+        mask: 0b00000111_11111111,
+        offset: 0,
+    };
+    const POLARITY: BitSet16<1> = BitSet16 {
+        mask: 0b00001,
+        offset: 11,
+    };
+    const ARITY: BitSet16<2> = BitSet16 {
+        mask: 0b0011,
+        offset: 12,
+    };
 
-    const PTR      : BitSet16<14> = BitSet16{ mask: 0b00111111_11111111, offset: 0 };
+    const PTR: BitSet16<14> = BitSet16 {
+        mask: 0b00111111_11111111,
+        offset: 0,
+    };
 
     pub fn new(index: usize, arity: SymbolArity, polarity: Polarity) -> Self {
         let mut new = Self(0);
@@ -93,19 +104,22 @@ impl SymbolPtr {
         Self::PTR.get(self.0)
     }
 
-
     pub fn get_raw(&self) -> u16 {
         self.0
     }
-
 }
 
 impl Binary for SymbolPtr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:02b}_{:01b}_{:013b}", self.get_arity() as u8, self.get_polarity() as u8, self.get_index())
+        write!(
+            f,
+            "{:02b}_{:01b}_{:013b}",
+            self.get_arity() as u8,
+            self.get_polarity() as u8,
+            self.get_index()
+        )
     }
 }
-
 
 impl From<u64> for SymbolPtr {
     fn from(value: u64) -> Self {
@@ -129,14 +143,26 @@ impl Debug for SymbolPtr {
     }
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy)]
 pub struct Symbol(u8);
 impl Symbol {
     //                                              0bAAPLR???
-    const ARITY          : BitSet8<2> = BitSet8{ mask: 0b11, offset: 6 };
-    const POLARITY       : BitSet8<1> = BitSet8{ mask: 0b001, offset: 5 };
-    const LEFT_POLARITY  : BitSet8<1> = BitSet8{ mask: 0b0001, offset: 4 };
-    const RIGHT_POLARITY : BitSet8<1> = BitSet8{ mask: 0b00001, offset: 3 };
+    const ARITY: BitSet8<2> = BitSet8 {
+        mask: 0b11,
+        offset: 6,
+    };
+    const POLARITY: BitSet8<1> = BitSet8 {
+        mask: 0b001,
+        offset: 5,
+    };
+    const LEFT_POLARITY: BitSet8<1> = BitSet8 {
+        mask: 0b0001,
+        offset: 4,
+    };
+    const RIGHT_POLARITY: BitSet8<1> = BitSet8 {
+        mask: 0b00001,
+        offset: 3,
+    };
 
     pub fn new0(polarity: Polarity) -> Self {
         let mut sym = Self(0);
@@ -218,17 +244,44 @@ impl Debug for Symbol {
         b.field("arity", &self.get_arity());
         b.field("polarity", &self.get_polarity());
         match self.get_arity() {
-            SymbolArity::Zero => {
-            },
+            SymbolArity::Zero => {}
             SymbolArity::One => {
                 b.field("port", &self.get_left_polarity());
-            },
+            }
             SymbolArity::Two => {
                 b.field("left", &self.get_left_polarity());
                 b.field("right", &self.get_right_polarity());
             }
         };
         b.finish()
+    }
+}
+
+pub struct SymbolItem<'a> {
+    pub symbol_ptr: SymbolPtr,
+    pub symbols: &'a SymbolBook,
+}
+impl<'a> Display for SymbolItem<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = self.symbols.get_name(self.symbol_ptr);
+        let symbol = self.symbols.get(self.symbol_ptr);
+        match symbol.get_arity() {
+            SymbolArity::Zero => {
+                write!(f, "{}", name)
+            }
+            SymbolArity::One => {
+                write!(f, "({} {})", name, symbol.get_left_polarity())
+            }
+            SymbolArity::Two => {
+                write!(
+                    f,
+                    "({} {} {})",
+                    name,
+                    symbol.get_left_polarity(),
+                    symbol.get_right_polarity()
+                )
+            }
+        }
     }
 }
 
@@ -240,7 +293,10 @@ pub struct SymbolBook {
 
 impl SymbolBook {
     pub fn new() -> Self {
-        Self { symbols: Vec::new(), names: Vec::new() }
+        Self {
+            symbols: Vec::new(),
+            names: Vec::new(),
+        }
     }
 
     pub fn add_symbol0(&mut self, name: &str, polarity: Polarity) -> SymbolPtr {
@@ -248,14 +304,29 @@ impl SymbolBook {
         self.push_symbol(Symbol::new0(polarity))
     }
 
-    pub fn add_symbol1(&mut self, name: &str, polarity: Polarity, left_port_polarity: Polarity) -> SymbolPtr {
+    pub fn add_symbol1(
+        &mut self,
+        name: &str,
+        polarity: Polarity,
+        left_port_polarity: Polarity,
+    ) -> SymbolPtr {
         self.names.push(name.to_string());
         self.push_symbol(Symbol::new1(polarity, left_port_polarity))
     }
 
-    pub fn add_symbol2(&mut self, name: &str, polarity: Polarity, left_port_polarity: Polarity, right_port_polarity: Polarity) -> SymbolPtr {
+    pub fn add_symbol2(
+        &mut self,
+        name: &str,
+        polarity: Polarity,
+        left_port_polarity: Polarity,
+        right_port_polarity: Polarity,
+    ) -> SymbolPtr {
         self.names.push(name.to_string());
-        self.push_symbol(Symbol::new2(polarity, left_port_polarity, right_port_polarity))
+        self.push_symbol(Symbol::new2(
+            polarity,
+            left_port_polarity,
+            right_port_polarity,
+        ))
     }
 
     pub fn get(&self, symbol_ptr: SymbolPtr) -> Symbol {
@@ -276,17 +347,28 @@ impl SymbolBook {
     pub fn iter<'a>(&'a self) -> SymbolBookIter<'a> {
         SymbolBookIter::new(&self.symbols, &self.names)
     }
+
+    pub fn display_symbol<'a>(&'a self, symbol_ptr: SymbolPtr) -> SymbolItem {
+        SymbolItem {
+            symbol_ptr,
+            symbols: self,
+        }
+    }
 }
 
 pub struct SymbolBookIter<'a> {
     index: usize,
     entries: &'a Vec<Symbol>,
-    names: &'a Vec<String>
+    names: &'a Vec<String>,
 }
 
 impl<'a> SymbolBookIter<'a> {
     pub fn new(entries: &'a Vec<Symbol>, names: &'a Vec<String>) -> Self {
-        Self { index: 0, entries, names }
+        Self {
+            index: 0,
+            entries,
+            names,
+        }
     }
 }
 
@@ -299,9 +381,12 @@ impl<'a> Iterator for SymbolBookIter<'a> {
             let symbol = &self.entries[self.index];
             let name = &self.names[self.index];
             self.index += 1;
-            Some(NamedSymbol{ index, name: name.to_string(), symbol: symbol.clone() })
-        }
-        else {
+            Some(NamedSymbol {
+                index,
+                name: name.to_string(),
+                symbol: symbol.clone(),
+            })
+        } else {
             None
         }
     }
@@ -310,15 +395,36 @@ impl<'a> Iterator for SymbolBookIter<'a> {
 pub struct NamedSymbol {
     index: usize,
     name: String,
-    symbol: Symbol
+    symbol: Symbol,
 }
 
 impl Display for NamedSymbol {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.symbol.get_arity() {
-            SymbolArity::Zero => write!(f, "Symbol[{}]: {}{}", self.index, self.symbol.get_polarity(), self.name),
-            SymbolArity::One => write!(f, "Symbol[{}]: {}({} {})", self.index, self.symbol.get_polarity(), self.name, self.symbol.get_left_polarity()),
-            SymbolArity::Two => write!(f, "Symbol[{}]: {}({} {} {})", self.index, self.symbol.get_polarity(), self.name, self.symbol.get_left_polarity(), self.symbol.get_right_polarity()),
+            SymbolArity::Zero => write!(
+                f,
+                "Symbol[{}]: {}{}",
+                self.index,
+                self.symbol.get_polarity(),
+                self.name
+            ),
+            SymbolArity::One => write!(
+                f,
+                "Symbol[{}]: {}({} {})",
+                self.index,
+                self.symbol.get_polarity(),
+                self.name,
+                self.symbol.get_left_polarity()
+            ),
+            SymbolArity::Two => write!(
+                f,
+                "Symbol[{}]: {}({} {} {})",
+                self.index,
+                self.symbol.get_polarity(),
+                self.name,
+                self.symbol.get_left_polarity(),
+                self.symbol.get_right_polarity()
+            ),
         }
     }
 }
@@ -331,10 +437,9 @@ impl Display for SymbolBook {
                 Err(_) => panic!(),
             }
         }
-        return Ok(())
+        return Ok(());
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -500,5 +605,4 @@ mod tests {
         ptr.set_polarity(Polarity::Neg);
         assert_eq!(ptr.get_polarity(), Polarity::Neg);
     }
-
 }

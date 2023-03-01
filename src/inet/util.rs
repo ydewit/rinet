@@ -1,5 +1,3 @@
-
-
 pub enum SmallVector<T, const N: usize> {
     Inline(usize, [T; N]),
     Dynamic(Vec<T>),
