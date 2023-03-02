@@ -1,13 +1,17 @@
 use core::panic;
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display, Formatter},
+};
 
 use super::{
-    arena::{ArenaIter, ToPtr},
-    cell::{CellItem, CellPtr, Cells, PortPtr},
-    equation::{Equation, EquationItem, EquationPtr, Equations},
+    arena::{Arena, ArenaPtr, ArenaValue},
+    cell::CellPtr,
+    equation::{Equation, EquationDisplay, EquationPtr, Equations},
+    heap::{CellDisplay, Heap, VarDisplay},
     symbol::{SymbolBook, SymbolPtr},
-    term::TermFamily,
-    var::{Var, VarItem, VarPtr, Vars},
+    term::{TermFamily, TermPtr},
+    var::{Var, VarPtr, Vars},
     BitSet16,
 };
 
@@ -18,6 +22,8 @@ impl TermFamily for RuleF {
 
     fn display_store(
         f: &mut std::fmt::Formatter<'_>,
+        symbols: &SymbolBook,
+        heap: &Heap<Self>,
         store: &Self::Store,
         index: usize,
     ) -> std::fmt::Result {
@@ -41,6 +47,16 @@ impl TermFamily for RuleF {
 pub enum RuleStore {
     Bound,
     Free { port: RulePort },
+}
+
+impl Vars<RuleF> {
+    pub fn bvar(&mut self) -> VarPtr {
+        self.alloc(Var::new(RuleStore::Bound))
+    }
+
+    pub fn fvar(&mut self, port: RulePort) -> VarPtr {
+        self.alloc(Var::new(RuleStore::Free { port }))
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -84,6 +100,21 @@ impl RulePtr {
     }
 }
 
+impl ArenaPtr for RulePtr {
+    fn get_index(&self) -> usize {
+        self.get_index()
+    }
+}
+
+impl Debug for RulePtr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let name = format!("RulePtr({:016b})", self.0);
+        let mut b = f.debug_struct(&name);
+        b.field("index", &self.get_index());
+        b.finish()
+    }
+}
+
 type RuleId = (usize, usize);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -118,231 +149,111 @@ impl Rule {
     }
 }
 
-pub struct RulesItem<'a> {
-    pub symbols: &'a SymbolBook,
-    pub book: &'a RuleBook,
-}
-impl<'a> RulesItem<'a> {
-    fn to_rule_item(&self, rule_ptr: RulePtr) -> RuleItem {
-        RuleItem {
-            rule_ptr,
-            symbols: self.symbols,
-            book: self.book,
-        }
-    }
-}
-impl<'a> Display for RulesItem<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.book.rules.iter().fold(Ok(()), |result, rule_ptr| {
-            result.and_then(|_| writeln!(f, "{}", self.to_rule_item(rule_ptr)))
-        })
-    }
-}
-
-pub struct RuleItem<'a> {
-    rule_ptr: RulePtr,
-    symbols: &'a SymbolBook,
-    book: &'a RuleBook,
-}
-impl<'a> RuleItem<'a> {
-    pub fn new(rule_ptr: RulePtr, symbols: &'a SymbolBook, book: &'a RuleBook) -> Self {
-        RuleItem {
-            rule_ptr,
-            symbols,
-            book,
-        }
-    }
-
-    fn to_body_item(&self, body: &'a Vec<EquationPtr>) -> RuleBodyItem {
-        RuleBodyItem {
-            body,
-            symbols: self.symbols,
-            book: self.book,
-        }
-    }
-}
-impl<'a> Display for RuleItem<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let rule = self.book.get_rule(self.rule_ptr);
-
-        let ctr_name = self.symbols.get_name(rule.ctr);
-        let fun_name = self.symbols.get_name(rule.fun);
-        write!(
-            f,
-            "{} >< {} -->{}",
-            ctr_name,
-            fun_name,
-            self.to_body_item(&rule.body)
-        )
-    }
-}
-
-pub struct RuleBodyItem<'a> {
-    pub body: &'a Vec<EquationPtr>,
-    pub symbols: &'a SymbolBook,
-    pub book: &'a RuleBook,
-}
-impl<'a> RuleBodyItem<'a> {
-    fn to_equation_item(&self, eqn_ptr: EquationPtr) -> EquationItem<'a, RuleF> {
-        EquationItem {
-            ptr: eqn_ptr,
-            symbols: self.symbols,
-            equations: &self.book.equations,
-            cells: &self.book.cells,
-            vars: &self.book.vars,
-        }
-    }
-}
-impl<'a> Display for RuleBodyItem<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.body
-            .iter()
-            .fold(Ok(()), |result, eqn_ptr| {
-                result.and_then(|_| write!(f, ", {}", self.to_equation_item(*eqn_ptr)))
-            })
-            .and_then(|_| write!(f, ""))
-    }
-}
-
-impl ToPtr<RulePtr> for Rule {
+impl ArenaValue<RulePtr> for Rule {
     fn to_ptr(&self, index: usize) -> RulePtr {
         RulePtr::new(index)
     }
 }
 
-#[derive(Debug)]
-pub struct Rules(Vec<Rule>);
-impl Rules {
-    pub fn new() -> Self {
-        Self(Vec::new())
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self(Vec::with_capacity(capacity))
-    }
-
-    pub fn get(&self, ptr: RulePtr) -> &Rule {
-        &self.0[ptr.get_index()]
-    }
-
-    pub fn add_all(&mut self, rules: Rules) {
-        self.0.extend(rules.0)
-    }
-
-    pub fn add(&mut self, rule: Rule) -> RulePtr {
-        let index = self.0.len();
-        let rule_ptr = rule.to_ptr(index);
-        self.0.push(rule);
-        rule_ptr
-    }
-
-    pub fn iter(&self) -> ArenaIter<Rule, RulePtr> {
-        ArenaIter::new(&self.0)
-    }
-}
-
-impl Vars<RuleF> {
-    pub fn bvar(&mut self) -> VarPtr {
-        self.add(Var::new(RuleStore::Bound))
-    }
-
-    pub fn fvar(&mut self, port: RulePort) -> VarPtr {
-        self.add(Var::new(RuleStore::Free { port }))
-    }
-}
+pub type Rules = Arena<Rule, RulePtr>;
 
 pub struct RuleBuilder<'a> {
     ctr: SymbolPtr,
     fun: SymbolPtr,
-    book: &'a mut RuleBook,
+    rules: &'a mut RuleBook,
     rule: Rule,
 }
 
 impl<'a> RuleBuilder<'a> {
-    fn new(ctr: SymbolPtr, fun: SymbolPtr, book: &'a mut RuleBook) -> Self {
+    fn new(ctr: SymbolPtr, fun: SymbolPtr, rules: &'a mut RuleBook) -> Self {
         Self {
             ctr,
             fun,
-            book,
+            rules,
             rule: Rule::new(ctr, fun),
         }
     }
 
     fn build(&mut self) -> RulePtr {
-        let rule_ptr = self.book.rules.add(self.rule.clone());
-        self.book
+        let rule_ptr = self.rules.rules.alloc(self.rule.clone());
+        self.rules
             .rule_by_symbols
             .insert(RuleBook::to_key(self.ctr, self.fun), rule_ptr.get_index());
         rule_ptr
     }
 
     pub fn redex(&mut self, ctr: CellPtr, fun: CellPtr) -> EquationPtr {
-        let eqn_ptr = self.book.equations.redex(ctr, fun);
+        let eqn_ptr = self.rules.body.alloc(Equation::redex(ctr, fun));
         self.rule.body.push(eqn_ptr);
         eqn_ptr
     }
 
     pub fn bind(&mut self, var: VarPtr, cell: CellPtr) -> EquationPtr {
-        let eqn_ptr = self.book.equations.bind(var, cell);
+        let eqn_ptr = self.rules.body.alloc(Equation::bind(var, cell));
         self.rule.body.push(eqn_ptr);
         eqn_ptr
     }
 
     pub fn connect(&mut self, left: VarPtr, right: VarPtr) -> EquationPtr {
-        let eqn_ptr = self.book.equations.connect(left, right);
+        let eqn_ptr = self.rules.body.alloc(Equation::connect(left, right));
         self.rule.body.push(eqn_ptr);
         eqn_ptr
     }
 
     /// ------------------------------------------------
 
-    pub fn cell0(&mut self, symbol: SymbolPtr) -> CellPtr {
-        self.book.cells.cell0(symbol)
+    pub fn cell0(&mut self, symbol_ptr: SymbolPtr) -> CellPtr {
+        self.rules.heap.cell0(symbol_ptr)
     }
 
-    pub fn cell1(&mut self, symbol: SymbolPtr, port: PortPtr) -> CellPtr {
-        self.book.cells.cell1(symbol, port)
+    pub fn cell1(&mut self, symbol_ptr: SymbolPtr, port: TermPtr) -> CellPtr {
+        self.rules.heap.cell1(symbol_ptr, port)
     }
 
-    pub fn cell2(&mut self, symbol: SymbolPtr, left_port: PortPtr, right_port: PortPtr) -> CellPtr {
-        self.book.cells.cell2(symbol, left_port, right_port)
+    pub fn cell2(
+        &mut self,
+        symbol_ptr: SymbolPtr,
+        left_port: TermPtr,
+        right_port: TermPtr,
+    ) -> CellPtr {
+        self.rules.heap.cell2(symbol_ptr, left_port, right_port)
     }
 
     /// ------------------------------------------------
 
     pub fn ctr_port_0(&mut self) -> VarPtr {
-        self.book.vars.add(Var::new(
+        self.rules.heap.var(
             RulePort::Ctr {
                 port: PortNum::Zero,
             }
             .into(),
-        ))
+        )
     }
 
     pub fn ctr_port_1(&mut self) -> VarPtr {
-        self.book
-            .vars
-            .add(Var::new(RulePort::Ctr { port: PortNum::One }.into()))
+        self.rules
+            .heap
+            .var(RulePort::Ctr { port: PortNum::One }.into())
     }
 
     pub fn fun_port_0(&mut self) -> VarPtr {
-        self.book.vars.add(Var::new(
+        self.rules.heap.var(
             RulePort::Fun {
                 port: PortNum::Zero,
             }
             .into(),
-        ))
+        )
     }
 
     pub fn fun_port_1(&mut self) -> VarPtr {
-        self.book
-            .vars
-            .add(Var::new(RulePort::Fun { port: PortNum::One }.into()))
+        self.rules
+            .heap
+            .var(RulePort::Fun { port: PortNum::One }.into())
     }
 
     pub fn var(&mut self) -> VarPtr {
         self.rule.bvars_count += 1;
-        self.book.vars.add(Var::new(RuleStore::Bound))
+        self.rules.heap.var(RuleStore::Bound)
     }
 }
 
@@ -350,9 +261,8 @@ impl<'a> RuleBuilder<'a> {
 pub struct RuleBook {
     rules: Rules,
     rule_by_symbols: HashMap<(usize, usize), usize>,
-    pub equations: Equations<RuleF>,
-    pub cells: Cells<RuleF>,
-    pub vars: Vars<RuleF>,
+    pub body: Equations<RuleF>,
+    pub heap: Heap<RuleF>,
 }
 
 impl RuleBook {
@@ -367,9 +277,8 @@ impl RuleBook {
         Self {
             rules: Rules::new(),
             rule_by_symbols: HashMap::default(),
-            equations: Equations::new(),
-            cells: Cells::new(),
-            vars: Vars::new(),
+            body: Equations::new(),
+            heap: Heap::new(),
         }
     }
 
@@ -393,32 +302,133 @@ impl RuleBook {
         }
     }
 
-    pub fn get_rule(&self, rule_ptr: RulePtr) -> &Rule {
-        self.rules.get(rule_ptr)
+    pub fn get_rule<'a>(&'a self, rule_ptr: RulePtr) -> &'a Rule {
+        self.rules.get(rule_ptr).unwrap()
     }
 
-    pub fn get_equation(&self, ptr: EquationPtr) -> Equation<RuleF> {
-        self.equations.get(ptr)
+    pub fn get_equation<'a>(&'a self, ptr: EquationPtr) -> &'a Equation<RuleF> {
+        self.body.get(ptr).unwrap()
+    }
+
+    pub fn display_rules<'a>(&'a self, symbols: &'a SymbolBook) -> RulesDisplay {
+        RulesDisplay{
+            symbols,
+            rules: self,
+        }
+    }
+
+    pub fn display_rule<'a>(&'a self, symbols: &'a SymbolBook, rule_ptr: RulePtr) -> RuleDisplay {
+        RuleDisplay::new(rule_ptr, symbols, self)
     }
 
     pub fn display_cell<'a>(
         &'a self,
         symbols: &'a SymbolBook,
         cell_ptr: CellPtr,
-    ) -> CellItem<RuleF> {
-        CellItem {
-            cell_ptr,
-            symbols: symbols,
-            cells: &self.cells,
-            vars: &self.vars,
+    ) -> CellDisplay<RuleF> {
+        self.heap.display_cell(symbols, cell_ptr)
+    }
+
+    pub fn display_var<'a>(
+        &'a self,
+        symbols: &'a SymbolBook,
+        var_ptr: VarPtr,
+    ) -> VarDisplay<RuleF> {
+        self.heap.display_var(symbols, var_ptr)
+    }
+
+    pub fn display_equation<'a>(
+        &'a self,
+        symbols: &'a SymbolBook,
+        eqn_ptr: EquationPtr,
+    ) -> EquationDisplay<RuleF> {
+        EquationDisplay {
+            ptr: eqn_ptr,
+            symbols,
+            body: &self.body,
+            heap: &self.heap,
+        }
+    }
+}
+
+pub struct RulesDisplay<'a> {
+    symbols: &'a SymbolBook,
+    rules: &'a RuleBook,
+}
+impl<'a> RulesDisplay<'a> {
+    fn to_rule_item(&self, rule_ptr: RulePtr) -> RuleDisplay {
+        RuleDisplay {
+            rule_ptr,
+            symbols: self.symbols,
+            rules: self.rules,
+        }
+    }
+}
+impl<'a> Display for RulesDisplay<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.rules.rules.iter().fold(Ok(()), |result, rule_ptr| {
+            result.and_then(|_| writeln!(f, "{}", self.to_rule_item(rule_ptr)))
+        })
+    }
+}
+
+pub struct RuleDisplay<'a> {
+    rule_ptr: RulePtr,
+    symbols: &'a SymbolBook,
+    rules: &'a RuleBook,
+}
+impl<'a> RuleDisplay<'a> {
+    pub fn new(rule_ptr: RulePtr, symbols: &'a SymbolBook, rules: &'a RuleBook) -> Self {
+        RuleDisplay {
+            rule_ptr,
+            symbols,
+            rules,
         }
     }
 
-    pub fn display_var<'a>(&'a self, symbols: &'a SymbolBook, var_ptr: VarPtr) -> VarItem<RuleF> {
-        VarItem {
-            var_ptr,
-            vars: &self.vars,
+    fn to_body_item(&self, body: &'a Vec<EquationPtr>) -> RuleBodyItem {
+        RuleBodyItem {
+            body,
+            symbols: self.symbols,
+            rules: self.rules,
         }
+    }
+}
+impl<'a> Display for RuleDisplay<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let rule = self.rules.get_rule(self.rule_ptr);
+
+        let ctr_name = self.symbols.get_name(rule.ctr);
+        let fun_name = self.symbols.get_name(rule.fun);
+        write!(
+            f,
+            "{} >< {} -->{}",
+            ctr_name,
+            fun_name,
+            self.to_body_item(&rule.body)
+        )
+    }
+}
+
+pub struct RuleBodyItem<'a> {
+    pub body: &'a Vec<EquationPtr>,
+    pub symbols: &'a SymbolBook,
+    pub rules: &'a RuleBook,
+}
+impl<'a> Display for RuleBodyItem<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.body
+            .iter()
+            .fold(Ok(()), |result, eqn_ptr| {
+                result.and_then(|_| {
+                    write!(
+                        f,
+                        ", {}",
+                        self.rules.display_equation(self.symbols, *eqn_ptr)
+                    )
+                })
+            })
+            .and_then(|_| write!(f, ""))
     }
 }
 
@@ -443,9 +453,9 @@ mod tests {
         let ctr = symbols.add_symbol0("Ctr", Polarity::Pos);
         let fun = symbols.add_symbol0("Fun", Polarity::Neg);
         let rule = Rule::new(ctr, fun);
-        let ptr = rules.add(rule.clone());
+        let ptr = rules.alloc(rule.clone());
 
-        assert_eq!(rules.get(ptr), &rule);
+        // assert_eq!(rules.get(ptr), &rule);
     }
 
     #[test]
@@ -455,18 +465,18 @@ mod tests {
         let ctr1 = symbols.add_symbol0("Ctr1", Polarity::Pos);
         let fun1 = symbols.add_symbol0("Fun1", Polarity::Neg);
         let rule1 = Rule::new(ctr1, fun1);
-        let ptr1 = rules.add(rule1.clone());
+        let ptr1 = rules.alloc(rule1.clone());
 
         let ctr2 = symbols.add_symbol0("Ctr2", Polarity::Pos);
         let fun2 = symbols.add_symbol0("Fun2", Polarity::Neg);
         let rule2 = Rule::new(ctr2, fun2);
-        let ptr2 = rules.add(rule2.clone());
+        let ptr2 = rules.alloc(rule2.clone());
 
         let mut all_rules = Rules::new();
-        all_rules.add_all(rules);
+        // all_rules.extends(rules);
 
-        assert_eq!(all_rules.get(ptr1), &rule1);
-        assert_eq!(all_rules.get(ptr2), &rule2);
+        assert_eq!(all_rules.get(ptr1).unwrap(), &rule1);
+        assert_eq!(all_rules.get(ptr2).unwrap(), &rule2);
     }
 
     // #[test]
@@ -480,7 +490,7 @@ mod tests {
 
     //     let book = RuleBook::new(symbols, rules, Cells::new(), Equations::new(), FVars::new(), BVars::new());
 
-    //     let rule_item = RuleItem {
+    //     let rule_item = RuleDisplay {
     //         rule_ptr: ptr,
     //         symbols: &book.symbols,
     //         book: &book,

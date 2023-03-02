@@ -1,10 +1,9 @@
 use core::panic;
-use std::fmt::{Binary, Debug, Display, Formatter};
+use std::fmt::{Binary, Debug, Formatter};
 
 use super::{
-    arena::{ArenaIter, ToPtr},
-    cell::PortPtr,
-    term::TermFamily,
+    arena::{Arena, ArenaPtr, ArenaValue},
+    term::{TermFamily, TermKind, TermPtr},
     BitSet32,
 };
 
@@ -47,6 +46,12 @@ impl VarPtr {
     }
 }
 
+impl ArenaPtr for VarPtr {
+    fn get_index(&self) -> usize {
+        self.get_index()
+    }
+}
+
 impl Debug for VarPtr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let name = format!("VarPtr({:0b})", self.0);
@@ -62,9 +67,9 @@ impl Binary for VarPtr {
     }
 }
 
-impl Into<PortPtr> for VarPtr {
-    fn into(self) -> PortPtr {
-        PortPtr::new_var(self)
+impl Into<TermPtr> for VarPtr {
+    fn into(self) -> TermPtr {
+        TermPtr::new_var(self)
     }
 }
 
@@ -74,10 +79,10 @@ impl From<u32> for VarPtr {
     }
 }
 
-impl From<PortPtr> for VarPtr {
-    fn from(value: PortPtr) -> Self {
+impl From<TermPtr> for VarPtr {
+    fn from(value: TermPtr) -> Self {
         match value.get_kind() {
-            super::cell::PortKind::Var => VarPtr(value.get_ptr()),
+            TermKind::Var => VarPtr(value.get_ptr()),
             _ => panic!(),
         }
     }
@@ -95,71 +100,13 @@ impl<T: TermFamily> Var<T> {
     }
 }
 
-#[derive(Debug)]
-pub struct Vars<T: TermFamily>(Vec<Var<T>>);
-impl<T: TermFamily> Vars<T> {
-    pub fn new() -> Self {
-        Self(Vec::new())
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self(Vec::with_capacity(capacity))
-    }
-
-    pub fn add(&mut self, var: Var<T>) -> VarPtr {
-        let index = self.0.len();
-        self.0.push(var);
-        VarPtr::new(index)
-    }
-
-    pub fn iter(&self) -> ArenaIter<Var<T>, VarPtr> {
-        ArenaIter::new(&self.0)
-    }
-
-    pub fn add_all(&mut self, fvars: Vars<T>) {
-        self.0.extend(fvars.0)
-    }
-
-    pub fn get(&self, ptr: VarPtr) -> &Var<T> {
-        &self.0[ptr.get_index()]
-    }
-}
-
-impl<T: TermFamily> ToPtr<VarPtr> for Var<T> {
+impl<T: TermFamily> ArenaValue<VarPtr> for Var<T> {
     fn to_ptr(&self, index: usize) -> VarPtr {
         VarPtr::new(index)
     }
 }
 
-pub struct VarItem<'a, T: TermFamily> {
-    pub var_ptr: VarPtr,
-    pub vars: &'a Vars<T>,
-}
-impl<'a, T: TermFamily> Display for VarItem<'a, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let var = self.vars.get(self.var_ptr.into());
-        T::display_store(f, &var.0, self.var_ptr.get_index())
-    }
-}
-
-pub struct VarsItem<'a, T: TermFamily> {
-    pub vars: &'a Vars<T>,
-}
-impl<'a, T: TermFamily> VarsItem<'a, T> {
-    fn to_var_item(&self, var_ptr: VarPtr) -> VarItem<'a, T> {
-        VarItem {
-            var_ptr,
-            vars: self.vars,
-        }
-    }
-}
-impl<'a, T: TermFamily> Display for VarsItem<'a, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.vars.iter().fold(Ok(()), |result, ptr| {
-            result.and_then(|_| write!(f, " {}", self.to_var_item(ptr.into())))
-        })
-    }
-}
+pub type Vars<T: TermFamily> = Arena<Var<T>, VarPtr>;
 
 #[cfg(test)]
 mod tests {

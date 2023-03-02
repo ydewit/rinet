@@ -16,7 +16,7 @@ impl Runtime {
     }
 
     pub fn eval(&self, mut net: Net) {
-        let eqns = net.equations();
+        let eqns = net.body();
         for eqn_ptr in eqns {
             match net.get_equation(&eqn_ptr) {
                 Some(Equation::Redex { ctr, fun }) => self.eval_redex(&mut net, ctr, fun),

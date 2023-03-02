@@ -6,11 +6,12 @@ use std::{
 use crate::inet::Polarity;
 
 use super::{
-    arena::{ArenaIter, ToPtr},
-    cell::{CellItem, CellPtr, Cells},
+    arena::{Arena, ArenaPtr, ArenaValue},
+    cell::CellPtr,
+    heap::Heap,
     symbol::SymbolBook,
     term::TermFamily,
-    var::{VarItem, VarPtr, Vars},
+    var::VarPtr,
     BitSet16, BitSet64,
 };
 
@@ -100,6 +101,12 @@ impl EquationPtr {
     fn set_index(&mut self, index: usize) {
         assert!(index < (u16::MAX - Self::KIND.mask as u16) as usize);
         self.0 |= Self::INDEX.set(self.0, index as u16)
+    }
+}
+
+impl ArenaPtr for EquationPtr {
+    fn get_index(&self) -> usize {
+        self.get_index()
     }
 }
 
@@ -241,6 +248,12 @@ impl<T: TermFamily> Equation<T> {
     }
 }
 
+impl<T: TermFamily> ArenaValue<EquationPtr> for Equation<T> {
+    fn to_ptr(&self, index: usize) -> EquationPtr {
+        EquationPtr::new(index, self.get_kind())
+    }
+}
+
 impl<T: TermFamily> Binary for Equation<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -250,12 +263,6 @@ impl<T: TermFamily> Binary for Equation<T> {
             self.get_left(),
             self.get_right()
         )
-    }
-}
-
-impl<T: TermFamily> ToPtr<EquationPtr> for Equation<T> {
-    fn to_ptr(&self, index: usize) -> EquationPtr {
-        EquationPtr::new(index, self.get_kind())
     }
 }
 
@@ -282,141 +289,64 @@ impl<T: TermFamily> Debug for Equation<T> {
     }
 }
 
-pub struct EquationItem<'a, T: TermFamily> {
+pub struct EquationDisplay<'a, T: TermFamily> {
     pub ptr: EquationPtr,
     pub symbols: &'a SymbolBook,
-    pub equations: &'a Equations<T>,
-    pub cells: &'a Cells<T>,
-    pub vars: &'a Vars<T>,
+    pub body: &'a Equations<T>,
+    pub heap: &'a Heap<T>,
 }
-impl<'a, T: TermFamily> EquationItem<'a, T> {
-    fn to_cell_item(&self, cell_ptr: CellPtr) -> CellItem<'a, T> {
-        CellItem {
-            cell_ptr,
-            symbols: self.symbols,
-            cells: self.cells,
-            vars: self.vars,
-        }
-    }
-
-    fn to_var_item(&self, var_ptr: VarPtr) -> VarItem<'a, T> {
-        VarItem {
-            var_ptr,
-            vars: self.vars,
-        }
-    }
-}
-impl<'a, T: TermFamily> Display for EquationItem<'a, T> {
+impl<'a, T: TermFamily> Display for EquationDisplay<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let eqn = self.equations.get(self.ptr);
+        let eqn = self.body.get(self.ptr).unwrap();
         match eqn.get_kind() {
             EquationKind::Redex => {
                 write!(
                     f,
                     "{} = {}",
-                    self.to_cell_item(eqn.get_redex_ctr()),
-                    self.to_cell_item(eqn.get_redex_fun())
+                    self.heap.display_cell(self.symbols, eqn.get_redex_ctr()),
+                    self.heap.display_cell(self.symbols, eqn.get_redex_fun())
                 )
             }
             EquationKind::Bind => {
                 write!(
                     f,
                     "{} ← {}",
-                    self.to_var_item(eqn.get_bind_var()),
-                    self.to_cell_item(eqn.get_bind_cell())
+                    self.heap.display_var(self.symbols, eqn.get_bind_var()),
+                    self.heap.display_cell(self.symbols, eqn.get_bind_cell())
                 )
             }
             EquationKind::Connect => {
                 write!(
                     f,
                     "{} ↔ {}",
-                    self.to_var_item(eqn.get_connect_left()),
-                    self.to_var_item(eqn.get_connect_right())
+                    self.heap.display_var(self.symbols, eqn.get_connect_left()),
+                    self.heap.display_var(self.symbols, eqn.get_connect_right())
                 )
             }
         }
     }
 }
 
-#[derive(Debug)]
-pub struct Equations<T: TermFamily>(Vec<Equation<T>>, PhantomData<T>);
-impl<T: TermFamily> Equations<T> {
-    pub fn new() -> Self {
-        Self(Vec::new(), PhantomData)
-    }
+pub type Equations<T: TermFamily> = Arena<Equation<T>, EquationPtr>;
 
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self(Vec::with_capacity(capacity), PhantomData)
-    }
-
-    pub fn get(&self, equation: EquationPtr) -> Equation<T> {
-        self.0[equation.get_index()].clone()
-    }
-
-    pub fn redex(&mut self, ctr: CellPtr, fun: CellPtr) -> EquationPtr {
-        self.add(Equation::redex(ctr, fun))
-    }
-
-    pub fn reuse_redex(&mut self, ptr: EquationPtr, ctr: CellPtr, fun: CellPtr) {
-        self.0[ptr.get_index()] = Equation::redex(ctr, fun);
-    }
-
-    pub fn bind(&mut self, var: VarPtr, cell: CellPtr) -> EquationPtr {
-        self.add(Equation::bind(var, cell))
-    }
-
-    pub fn reuse_bind(&mut self, ptr: EquationPtr, var: VarPtr, cell: CellPtr) {
-        self.0[ptr.get_index()] = Equation::bind(var, cell);
-    }
-
-    pub fn connect(&mut self, left: VarPtr, right: VarPtr) -> EquationPtr {
-        self.add(Equation::connect(left, right))
-    }
-
-    pub fn reuse_connect(&mut self, ptr: EquationPtr, left: VarPtr, right: VarPtr) {
-        self.0[ptr.get_index()] = Equation::connect(left, right);
-    }
-
-    pub fn add_all(&mut self, equations: Equations<T>) {
-        self.0.extend(equations.0)
-    }
-
-    pub fn all(&mut self) -> std::vec::Drain<Equation<T>> {
-        self.0.drain(..)
-    }
-
-    fn add(&mut self, equation: Equation<T>) -> EquationPtr {
-        let index = self.0.len();
-        let ptr = equation.to_ptr(index);
-        self.0.push(equation);
-        ptr
-    }
-
-    pub fn iter(&self) -> ArenaIter<Equation<T>, EquationPtr> {
-        ArenaIter::new(&self.0)
-    }
-}
-
-pub struct EquationsItem<'a, T: TermFamily> {
+pub struct EquationsDisplay<'a, T: TermFamily> {
     pub symbols: &'a SymbolBook,
-    pub equations: &'a Equations<T>,
-    pub cells: &'a Cells<T>,
-    pub vars: &'a Vars<T>,
+    pub body: &'a Equations<T>,
+    pub heap: &'a Heap<T>,
 }
-impl<'a, T: TermFamily> EquationsItem<'a, T> {
-    fn to_equation_item(&self, eqn_ptr: EquationPtr) -> EquationItem<T> {
-        EquationItem {
+impl<'a, T: TermFamily> EquationsDisplay<'a, T> {
+    fn to_equation_item(&self, eqn_ptr: EquationPtr) -> EquationDisplay<T> {
+        EquationDisplay {
             ptr: eqn_ptr,
             symbols: self.symbols,
-            equations: self.equations,
-            cells: self.cells,
-            vars: self.vars,
+            body: self.body,
+            heap: self.heap,
         }
     }
 }
-impl<'a, T: TermFamily> Display for EquationsItem<'a, T> {
+impl<'a, T: TermFamily> Display for EquationsDisplay<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.equations.iter().fold(Ok(()), |result, eqn_ptr| {
+        self.body.iter().fold(Ok(()), |result, eqn_ptr| {
             result.and_then(|_| write!(f, " {}", self.to_equation_item(eqn_ptr)))
         })
     }

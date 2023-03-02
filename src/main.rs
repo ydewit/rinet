@@ -8,13 +8,7 @@ fn main() {
     inet_main()
 }
 
-use crate::inet::{
-    net::{Net, NetItem},
-    rule::{RuleBook, RulesItem},
-    runtime::Runtime,
-    symbol::SymbolBook,
-    Polarity,
-};
+use crate::inet::{net::Net, rule::RuleBook, runtime::Runtime, symbol::SymbolBook, Polarity};
 
 pub fn inet_main() {
     // symbols
@@ -58,21 +52,19 @@ pub fn inet_main() {
         builder.bind(s_port_0.into(), add);
     });
 
-    println!(
-        "{}",
-        RulesItem {
-            symbols: &symbols,
-            book: &rules
-        }
-    );
+    println!("{}", rules.display_rules(&symbols));
     println!();
     println!("{:?}", rules);
 
     println!();
 
-    println!("{}", NetItem::new(&symbols, &net));
+    let mut runtime = Runtime::new(&symbols, &rules);
+
+    println!("{}", net.display_net(&symbols));
     println!();
 
-    let mut runtime = Runtime::new(&symbols, &rules);
-    runtime.eval(net);
+    let net = runtime.eval(net);
+
+    println!("{}", net.display_net(&symbols));
+    println!();
 }
