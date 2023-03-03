@@ -35,8 +35,8 @@ impl<'a, T: ArenaValue<P>, P: ArenaPtr> Iterator for ArenaPtrIter<'a, T, P> {
         for i in self.index..self.arena.entries.len() {
             match &self.arena.entries[i] {
                 ArenaEntry::Occupied(value) => {
-                    let ptr = value.to_ptr(self.index);
-                    self.index += 1;
+                    let ptr = value.to_ptr(i);
+                    self.index = i + 1;
                     return Some(ptr);
                 }
                 ArenaEntry::Free(_) => (),
@@ -151,10 +151,19 @@ impl<T: ArenaValue<P>, P: ArenaPtr> Arena<T, P> {
     }
 
     pub fn alloc(&mut self, value: T) -> P {
-        let index = self.entries.len();
-        let ptr = value.to_ptr(index);
-        self.entries.push(ArenaEntry::Occupied(value));
-        ptr
+        match self.free.pop() {
+            Some(index) => {
+                let ptr = value.to_ptr(index);
+                self.entries[index] = ArenaEntry::Occupied(value);
+                ptr
+            }
+            None => {
+                let index = self.entries.len();
+                let ptr = value.to_ptr(index);
+                self.entries.push(ArenaEntry::Occupied(value));
+                ptr
+            }
+        }
     }
 
     // pub fn extend(&mut self, arena: Arena<T,P>) {

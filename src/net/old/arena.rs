@@ -754,12 +754,12 @@ mod tests {
 
         let mut rules = RuleBook::new();
 
-        // add >< Z -->
+        // add >< Z ⟶
         rules.add(add_symbol_id, z_symbol_id, |b, z, add| {
             b.connect(add[0], add[0]);
         });
 
-        // add >< S -->
+        // add >< S ⟶
         rules.add(add_symbol_id, z_symbol_id, |b, s, add| {
             let x = b.bvar('x');
             b.bind(s[0], b.cell(add_symbol_id, vec![TermId::from(x), TermId::from(add[1])]));

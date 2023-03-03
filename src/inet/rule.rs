@@ -9,53 +9,42 @@ use super::{
     cell::CellPtr,
     equation::{Equation, EquationDisplay, EquationPtr, Equations},
     heap::{CellDisplay, Heap, VarDisplay},
-    symbol::{SymbolBook, SymbolPtr},
+    symbol::{SymbolBook, SymbolPtr, SymbolArity},
     term::{TermFamily, TermPtr},
-    var::{Var, VarPtr, Vars},
+    var::{Var, VarPtr},
     BitSet16,
 };
 
 #[derive(Debug, Clone)]
 pub struct RuleF {}
 impl TermFamily for RuleF {
-    type Store = RuleStore;
+    type BoundStore = u8;
+    type FreeStore = RulePort;
 
     fn display_store(
         f: &mut std::fmt::Formatter<'_>,
         symbols: &SymbolBook,
         heap: &Heap<Self>,
-        store: &Self::Store,
+        var: &Var<RuleF>,
         index: usize,
     ) -> std::fmt::Result {
-        match store {
-            RuleStore::Bound => write!(f, "x[{}]", index),
-            RuleStore::Free { port } => match port {
-                RulePort::Ctr {
-                    port: PortNum::Zero,
-                } => write!(f, "{{Ctr[0]}}"),
-                RulePort::Ctr { port: PortNum::One } => write!(f, "{{Ctr[1]}}"),
-                RulePort::Fun {
-                    port: PortNum::Zero,
-                } => write!(f, "{{fun[0]}}"),
-                RulePort::Fun { port: PortNum::One } => write!(f, "{{fun[1]}}"),
-            },
+        match var {
+            Var::Bound(store) => {
+                write!(f, "x{}", store)
+            }
+            Var::Free(RulePort::Ctr(PortNum::Zero)) => {
+                write!(f, "l₀")
+            }
+            Var::Free(RulePort::Ctr(PortNum::One)) => {
+                write!(f, "l₁")
+            }
+            Var::Free(RulePort::Fun(PortNum::Zero)) => {
+                write!(f, "r₀")
+            }
+            Var::Free(RulePort::Fun(PortNum::One)) => {
+                write!(f, "r₁")
+            }
         }
-    }
-}
-
-#[derive(Debug)]
-pub enum RuleStore {
-    Bound,
-    Free { port: RulePort },
-}
-
-impl Vars<RuleF> {
-    pub fn bvar(&mut self) -> VarPtr {
-        self.alloc(Var::new(RuleStore::Bound))
-    }
-
-    pub fn fvar(&mut self, port: RulePort) -> VarPtr {
-        self.alloc(Var::new(RuleStore::Free { port }))
     }
 }
 
@@ -67,13 +56,13 @@ pub enum PortNum {
 
 #[derive(Debug, Clone, Copy)]
 pub enum RulePort {
-    Ctr { port: PortNum },
-    Fun { port: PortNum },
+    Ctr(PortNum),
+    Fun(PortNum),
 }
 
-impl Into<RuleStore> for RulePort {
-    fn into(self) -> RuleStore {
-        RuleStore::Free { port: self }
+impl Into<Var<RuleF>> for RulePort {
+    fn into(self) -> Var<RuleF> {
+        Var::Free(self)
     }
 }
 
@@ -119,10 +108,10 @@ type RuleId = (usize, usize);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rule {
-    ctr: SymbolPtr,
-    fun: SymbolPtr,
+    pub(crate) ctr: SymbolPtr,
+    pub(crate) fun: SymbolPtr,
     fvar_ptrs: Vec<VarPtr>,
-    bvars_count: usize,
+    bvar_count: u8,
     pub body: Vec<EquationPtr>,
 }
 impl Rule {
@@ -131,7 +120,7 @@ impl Rule {
             ctr,
             fun,
             fvar_ptrs: Vec::new(),
-            bvars_count: 0,
+            bvar_count: 0,
             body: Vec::new(),
         }
     }
@@ -140,8 +129,12 @@ impl Rule {
         (self.ctr.get_index(), self.fun.get_index())
     }
 
-    pub fn get_bvar_count(&self) -> usize {
-        self.bvars_count
+    pub fn get_bvar_count(&self) -> u8 {
+        self.bvar_count
+    }
+
+    pub fn get_fvar_count(&self) -> usize {
+        self.fvar_ptrs.len()
     }
 
     pub fn body(&self) -> std::slice::Iter<EquationPtr> {
@@ -222,51 +215,45 @@ impl<'a> RuleBuilder<'a> {
     /// ------------------------------------------------
 
     pub fn ctr_port_0(&mut self) -> VarPtr {
-        self.rules.heap.var(
-            RulePort::Ctr {
-                port: PortNum::Zero,
-            }
-            .into(),
-        )
+        let var_ptr = self.rules.heap.fvar(RulePort::Ctr(PortNum::Zero));
+        self.rule.fvar_ptrs.push(var_ptr);
+        var_ptr
     }
 
     pub fn ctr_port_1(&mut self) -> VarPtr {
-        self.rules
-            .heap
-            .var(RulePort::Ctr { port: PortNum::One }.into())
+        let var_ptr = self.rules.heap.fvar(RulePort::Ctr(PortNum::One));
+        self.rule.fvar_ptrs.push(var_ptr);
+        var_ptr
     }
 
     pub fn fun_port_0(&mut self) -> VarPtr {
-        self.rules.heap.var(
-            RulePort::Fun {
-                port: PortNum::Zero,
-            }
-            .into(),
-        )
+        let var_ptr = self.rules.heap.fvar(RulePort::Fun(PortNum::Zero));
+        self.rule.fvar_ptrs.push(var_ptr);
+        var_ptr
     }
 
     pub fn fun_port_1(&mut self) -> VarPtr {
-        self.rules
-            .heap
-            .var(RulePort::Fun { port: PortNum::One }.into())
+        let var_ptr = self.rules.heap.fvar(RulePort::Fun(PortNum::One));
+        self.rule.fvar_ptrs.push(var_ptr);
+        var_ptr
     }
 
     pub fn var(&mut self) -> VarPtr {
-        self.rule.bvars_count += 1;
-        self.rules.heap.var(RuleStore::Bound)
+        self.rule.bvar_count += 1;
+        self.rules.heap.bvar(self.rule.bvar_count - 1)
     }
 }
 
 #[derive(Debug)]
 pub struct RuleBook {
     rules: Rules,
-    rule_by_symbols: HashMap<(usize, usize), usize>,
-    pub body: Equations<RuleF>,
-    pub heap: Heap<RuleF>,
+    rule_by_symbols: HashMap<RuleId, usize>,
+    pub(crate) body: Equations<RuleF>,
+    pub(crate) heap: Heap<RuleF>,
 }
 
 impl RuleBook {
-    fn to_key(left: SymbolPtr, right: SymbolPtr) -> (usize, usize) {
+    fn to_key(left: SymbolPtr, right: SymbolPtr) -> RuleId {
         (
             std::cmp::min(left.get_index(), right.get_index()),
             std::cmp::max(left.get_index(), right.get_index()),
@@ -311,14 +298,30 @@ impl RuleBook {
     }
 
     pub fn display_rules<'a>(&'a self, symbols: &'a SymbolBook) -> RulesDisplay {
-        RulesDisplay{
+        RulesDisplay {
             symbols,
             rules: self,
         }
     }
 
     pub fn display_rule<'a>(&'a self, symbols: &'a SymbolBook, rule_ptr: RulePtr) -> RuleDisplay {
-        RuleDisplay::new(rule_ptr, symbols, self)
+        RuleDisplay {
+            rule_ptr,
+            symbols,
+            rules: self,
+        }
+    }
+
+    fn display_body<'a>(
+        &'a self,
+        symbols: &'a SymbolBook,
+        body: &'a [EquationPtr],
+    ) -> RuleBodyDisplay {
+        RuleBodyDisplay {
+            body,
+            symbols: symbols,
+            rules: self,
+        }
     }
 
     pub fn display_cell<'a>(
@@ -340,12 +343,11 @@ impl RuleBook {
     pub fn display_equation<'a>(
         &'a self,
         symbols: &'a SymbolBook,
-        eqn_ptr: EquationPtr,
+        equation: &'a Equation<RuleF>,
     ) -> EquationDisplay<RuleF> {
         EquationDisplay {
-            ptr: eqn_ptr,
+            equation,
             symbols,
-            body: &self.body,
             heap: &self.heap,
         }
     }
@@ -377,54 +379,48 @@ pub struct RuleDisplay<'a> {
     symbols: &'a SymbolBook,
     rules: &'a RuleBook,
 }
-impl<'a> RuleDisplay<'a> {
-    pub fn new(rule_ptr: RulePtr, symbols: &'a SymbolBook, rules: &'a RuleBook) -> Self {
-        RuleDisplay {
-            rule_ptr,
-            symbols,
-            rules,
-        }
-    }
-
-    fn to_body_item(&self, body: &'a Vec<EquationPtr>) -> RuleBodyItem {
-        RuleBodyItem {
-            body,
-            symbols: self.symbols,
-            rules: self.rules,
-        }
-    }
-}
 impl<'a> Display for RuleDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let rule = self.rules.get_rule(self.rule_ptr);
 
         let ctr_name = self.symbols.get_name(rule.ctr);
         let fun_name = self.symbols.get_name(rule.fun);
-        write!(
-            f,
-            "{} >< {} -->{}",
-            ctr_name,
-            fun_name,
-            self.to_body_item(&rule.body)
-        )
+
+        match rule.ctr.get_arity() {
+            SymbolArity::Zero => write!(f, "{}", ctr_name),
+            SymbolArity::One => write!(f, "({} l₀)", ctr_name),
+            SymbolArity::Two => write!(f, "({} l₀ l₁)", ctr_name),
+        }.and_then(|_|{
+            write!(f, " ⋈ ")
+        }).and_then(|_|{
+            match rule.fun.get_arity() {
+                SymbolArity::Zero => write!(f, "{}", fun_name),
+                SymbolArity::One => write!(f, "({} r₀)", fun_name),
+                SymbolArity::Two => write!(f, "({} r₀ r₁)", fun_name),
+            }}).and_then(|_|{
+                write!(f, "  ⟶  ")
+            }).and_then(|_|{
+                self.rules.display_body(self.symbols, &rule.body[..]).fmt(f)
+            })
     }
 }
 
-pub struct RuleBodyItem<'a> {
-    pub body: &'a Vec<EquationPtr>,
+pub struct RuleBodyDisplay<'a> {
+    pub body: &'a [EquationPtr],
     pub symbols: &'a SymbolBook,
     pub rules: &'a RuleBook,
 }
-impl<'a> Display for RuleBodyItem<'a> {
+impl<'a> Display for RuleBodyDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.body
             .iter()
             .fold(Ok(()), |result, eqn_ptr| {
                 result.and_then(|_| {
+                    let equation = self.rules.body.get(*eqn_ptr).unwrap();
                     write!(
                         f,
                         ", {}",
-                        self.rules.display_equation(self.symbols, *eqn_ptr)
+                        self.rules.display_equation(self.symbols, equation)
                     )
                 })
             })
@@ -496,6 +492,6 @@ mod tests {
     //         book: &book,
     //     };
     //     let rule_str = format!("{}", rule_item);
-    //     assert_eq!(rule_str, "Ctr >< Fun --> , ?0 := 0");
+    //     assert_eq!(rule_str, "Ctr >< Fun  ⟶  , ?0 := 0");
     // }
 }

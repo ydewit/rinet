@@ -126,6 +126,14 @@ impl Debug for EquationPtr {
     }
 }
 
+pub fn order_ctr_fun(left_ptr: CellPtr, right_ptr: CellPtr) -> (CellPtr, CellPtr) {
+    match (left_ptr.get_polarity(), right_ptr.get_polarity()) {
+        (Polarity::Pos, Polarity::Neg) => (left_ptr, right_ptr),
+        (Polarity::Neg, Polarity::Pos) => (right_ptr, left_ptr),
+        _ => panic!(),
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Equation<T: TermFamily>(pub u64, PhantomData<T>);
 impl<T: TermFamily> Equation<T> {
@@ -254,6 +262,12 @@ impl<T: TermFamily> ArenaValue<EquationPtr> for Equation<T> {
     }
 }
 
+impl <T: TermFamily> From<u64> for Equation<T> {
+    fn from(value: u64) -> Self {
+        Equation(value, PhantomData)
+    }
+}
+
 impl<T: TermFamily> Binary for Equation<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -290,44 +304,48 @@ impl<T: TermFamily> Debug for Equation<T> {
 }
 
 pub struct EquationDisplay<'a, T: TermFamily> {
-    pub ptr: EquationPtr,
+    pub equation: &'a Equation<T>,
     pub symbols: &'a SymbolBook,
-    pub body: &'a Equations<T>,
     pub heap: &'a Heap<T>,
 }
 impl<'a, T: TermFamily> Display for EquationDisplay<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let eqn = self.body.get(self.ptr).unwrap();
-        match eqn.get_kind() {
+        match self.equation.get_kind() {
             EquationKind::Redex => {
                 write!(
                     f,
                     "{} = {}",
-                    self.heap.display_cell(self.symbols, eqn.get_redex_ctr()),
-                    self.heap.display_cell(self.symbols, eqn.get_redex_fun())
+                    self.heap
+                        .display_cell(self.symbols, self.equation.get_redex_ctr()),
+                    self.heap
+                        .display_cell(self.symbols, self.equation.get_redex_fun())
                 )
             }
             EquationKind::Bind => {
                 write!(
                     f,
                     "{} ← {}",
-                    self.heap.display_var(self.symbols, eqn.get_bind_var()),
-                    self.heap.display_cell(self.symbols, eqn.get_bind_cell())
+                    self.heap
+                        .display_var(self.symbols, self.equation.get_bind_var()),
+                    self.heap
+                        .display_cell(self.symbols, self.equation.get_bind_cell())
                 )
             }
             EquationKind::Connect => {
                 write!(
                     f,
                     "{} ↔ {}",
-                    self.heap.display_var(self.symbols, eqn.get_connect_left()),
-                    self.heap.display_var(self.symbols, eqn.get_connect_right())
+                    self.heap
+                        .display_var(self.symbols, self.equation.get_connect_left()),
+                    self.heap
+                        .display_var(self.symbols, self.equation.get_connect_right())
                 )
             }
         }
     }
 }
 
-pub type Equations<T: TermFamily> = Arena<Equation<T>, EquationPtr>;
+pub type Equations<T> = Arena<Equation<T>, EquationPtr>;
 
 pub struct EquationsDisplay<'a, T: TermFamily> {
     pub symbols: &'a SymbolBook,
@@ -335,11 +353,10 @@ pub struct EquationsDisplay<'a, T: TermFamily> {
     pub heap: &'a Heap<T>,
 }
 impl<'a, T: TermFamily> EquationsDisplay<'a, T> {
-    fn to_equation_item(&self, eqn_ptr: EquationPtr) -> EquationDisplay<T> {
+    fn to_equation_item(&'a self, equation: &'a Equation<T>) -> EquationDisplay<T> {
         EquationDisplay {
-            ptr: eqn_ptr,
+            equation,
             symbols: self.symbols,
-            body: self.body,
             heap: self.heap,
         }
     }
@@ -347,7 +364,13 @@ impl<'a, T: TermFamily> EquationsDisplay<'a, T> {
 impl<'a, T: TermFamily> Display for EquationsDisplay<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.body.iter().fold(Ok(()), |result, eqn_ptr| {
-            result.and_then(|_| write!(f, " {}", self.to_equation_item(eqn_ptr)))
+            result.and_then(|_| {
+                write!(
+                    f,
+                    " {}",
+                    self.to_equation_item(self.body.get(eqn_ptr).unwrap())
+                )
+            })
         })
     }
 }

@@ -1,42 +1,72 @@
+use crate::inet::{equation::order_ctr_fun, var::Var};
+
 use super::{
     cell::{Cell, CellPtr},
     equation::{Equation, EquationKind},
     net::{Net, NetF},
-    rule::{PortNum, RuleBook, RuleF, RulePort, RuleStore},
+    rule::{PortNum, RuleBook, RuleF, RulePort},
     symbol::{SymbolArity, SymbolBook},
     term::{TermKind, TermPtr},
-    var::VarPtr,
-    Polarity,
+    var::VarPtr
 };
 
 pub struct BVarPtrs {
-    bvar_ptrs: [VarPtr; Self::MAX_BVARS_PER_RULE],
-    len: usize,
+    bvar_ptrs: [VarPtr; Self::MAX_BVARS_PER_RULE as usize],
+    len: u8,
 }
 
 impl BVarPtrs {
-    const MAX_BVARS_PER_RULE: usize = 10;
+    const MAX_BVARS_PER_RULE: u8 = 10;
 
-    fn new(net: &mut Net, len: usize) -> Self {
+    fn new(net: &mut Net, len: u8) -> Self {
         assert!(len < Self::MAX_BVARS_PER_RULE);
         let mut this = Self {
-            bvar_ptrs: [VarPtr::new(0); Self::MAX_BVARS_PER_RULE],
+            bvar_ptrs: [VarPtr::new(0); Self::MAX_BVARS_PER_RULE as usize],
             len,
         };
         for i in 0..len {
-            this.bvar_ptrs[i] = net.var();
+            this.bvar_ptrs[i as usize] = net.bvar();
         }
         this
     }
 
-    fn get(&self, bvar_ptr: VarPtr) -> VarPtr {
-        self.bvar_ptrs[bvar_ptr.get_index()]
+    fn get(&self, bvar_id: u8) -> VarPtr {
+        self.bvar_ptrs[bvar_id as usize]
     }
 }
 
+// #[derive(Debug)]
+// struct Equations {
+//     eqns: [Equation<NetF>; 10],
+//     len: u8,
+// }
+
+// impl Equations {
+//     pub fn new() -> Self {
+//         Self {
+//             eqns: [Equation::<NetF>::from(0u64);10],
+//             len: 0
+//         }
+//     }
+
+//     pub fn iter(&self) -> std::slice::Iter<Equation<NetF>>  {
+//         self.eqns[0..self.len as usize].iter()
+//     }
+
+//     pub fn push(&mut self, equation: Equation<NetF>) {
+//         assert!(self.eqns.len() > self.len as usize);
+//         self.eqns[self.len as usize] = equation;
+//         self.len += 1
+//     }
+
+//     pub fn clean(&mut self) {
+//         self.len = 0;
+//     }
+// }
+
 pub struct Runtime<'a> {
     symbols: &'a SymbolBook,
-    rules: &'a RuleBook
+    rules: &'a RuleBook,
 }
 
 impl<'a> Runtime<'a> {
@@ -45,9 +75,11 @@ impl<'a> Runtime<'a> {
     }
 
     pub fn eval(&mut self, mut net: Net) -> Net {
-        let eqns: Vec<Equation<NetF>> = net.body.drain_values().collect();
-        for eqn in eqns {
-            net = self.eval_equation(net, eqn)
+        while net.body.len() > 0 {
+            let eqns: Vec<Equation<NetF>> = net.body.drain_values().collect();
+            for eqn in eqns {
+                net = self.eval_equation(net, eqn);
+            }
         }
         net
     }
@@ -64,7 +96,7 @@ impl<'a> Runtime<'a> {
 
     fn eval_redex(&mut self, mut net: Net, ctr_ptr: CellPtr, fun_ptr: CellPtr) -> Net {
         println!(
-            "Evaluating REDEX: {} >< {}",
+            "Evaluating REDEX: {} ⋈ {}",
             net.heap.display_cell(self.symbols, ctr_ptr),
             net.heap.display_cell(self.symbols, fun_ptr)
         );
@@ -78,7 +110,11 @@ impl<'a> Runtime<'a> {
             .get_by_symbols(ctr.get_symbol_ptr(), fun.get_symbol_ptr());
         let rule = self.rules.get_rule(rule_ptr);
 
-        println!("Found RULE: {}", self.rules.display_rule(self.symbols, rule_ptr));
+        // println!(
+        //     "Found RULE: {} >< {}",
+        //     self.symbols.get_name(rule.ctr),
+        //     self.symbols.get_name(rule.fun)
+        // );
 
         // preallocate bound vars (TODO can we allocate in consecutive indexes to simplify rewrite?)
         // let bvars = net.alloc_bvars(rule.get_bvar_count());
@@ -87,11 +123,12 @@ impl<'a> Runtime<'a> {
         // interpret rule
         for rule_eqn_ptr in rule.body() {
             let rule_eqn = self.rules.get_equation(*rule_eqn_ptr).clone();
-            net = self.rewrite_rule_equation(net, &mut bvars, ctr, fun, rule_eqn)
-
-            // net.cells.free(ctr_ptr);
-            // net.cells.free(fun_ptr);
+            net = self.rewrite_equation(net, &mut bvars, ctr, fun, rule_eqn);
         }
+
+        net.heap.free_cell(ctr_ptr);
+        net.heap.free_cell(fun_ptr);
+
         net
     }
 
@@ -102,14 +139,16 @@ impl<'a> Runtime<'a> {
             net.heap.display_cell(self.symbols, cell_ptr)
         );
 
-        match net.try_set_var(var_ptr, cell_ptr) {
+        let var = net.get_var(var_ptr);
+        match var.get_store().get_or_set(cell_ptr) {
             Some(other_cell_ptr) => {
-                // cell communicated, free the bound var
-                net.heap.free_var(var_ptr);
-                match cell_ptr.get_polarity() {
-                    Polarity::Pos => self.eval_redex(net, cell_ptr, other_cell_ptr),
-                    Polarity::Neg => self.eval_redex(net, other_cell_ptr, cell_ptr),
+                if var.is_bound() {
+                    // cell communicated, free the bound var
+                    net.heap.free_var(var_ptr);
                 }
+                let (ctr_ptr, fun_ptr) = order_ctr_fun(cell_ptr, other_cell_ptr);
+                net.body.alloc(Equation::redex(ctr_ptr, fun_ptr));
+                net
             }
             None => net, // set succeeded,
         }
@@ -128,7 +167,7 @@ impl<'a> Runtime<'a> {
         todo!()
     }
 
-    fn rewrite_rule_equation(
+    fn rewrite_equation(
         &mut self,
         net: Net,
         bvars: &mut BVarPtrs,
@@ -137,7 +176,7 @@ impl<'a> Runtime<'a> {
         rule_eqn: Equation<RuleF>,
     ) -> Net {
         match rule_eqn.get_kind() {
-            EquationKind::Redex => self.rewrite_redex(
+            EquationKind::Redex => self.instantiate_redex(
                 net,
                 bvars,
                 ctr,
@@ -145,7 +184,7 @@ impl<'a> Runtime<'a> {
                 rule_eqn.get_redex_ctr(),
                 rule_eqn.get_redex_fun(),
             ),
-            EquationKind::Bind => self.rewrite_bind(
+            EquationKind::Bind => self.instantiate_bind(
                 net,
                 bvars,
                 ctr,
@@ -153,7 +192,7 @@ impl<'a> Runtime<'a> {
                 rule_eqn.get_bind_var(),
                 rule_eqn.get_bind_cell(),
             ),
-            EquationKind::Connect => self.rewrite_connect(
+            EquationKind::Connect => self.instantiate_connect(
                 net,
                 bvars,
                 ctr,
@@ -164,7 +203,7 @@ impl<'a> Runtime<'a> {
         }
     }
 
-    fn rewrite_redex(
+    fn instantiate_redex(
         &mut self,
         mut net: Net,
         bvars: &mut BVarPtrs,
@@ -176,11 +215,19 @@ impl<'a> Runtime<'a> {
         let ctr_ptr = self.instantiate_cell(&mut net, bvars, ctr, fun, rule_ctr_ptr);
         let fun_ptr = self.instantiate_cell(&mut net, bvars, ctr, fun, rule_fun_ptr);
 
-        //
-        self.eval_redex(net, ctr_ptr, fun_ptr)
+        println!(
+            "Instantiate redex: {} = {}  ⟶  {} = {}",
+            self.rules.display_cell(self.symbols, rule_ctr_ptr),
+            self.rules.display_cell(self.symbols, rule_fun_ptr),
+            net.heap.display_cell(self.symbols, ctr_ptr),
+            net.heap.display_cell(self.symbols, fun_ptr)
+        );
+
+        net.body.alloc(Equation::redex(ctr_ptr, fun_ptr));
+        net
     }
 
-    fn rewrite_bind(
+    fn instantiate_bind(
         &mut self,
         mut net: Net,
         bvars: &mut BVarPtrs,
@@ -191,26 +238,53 @@ impl<'a> Runtime<'a> {
     ) -> Net {
         let cell_ptr = self.instantiate_cell(&mut net, bvars, ctr, fun, rule_cell_ptr);
         let term_ptr = self.instantiate_var(&net, bvars, ctr, fun, rule_var_ptr);
+
+        print!(
+            "Instantiate bind: {} ← {}",
+            self.rules.display_var(self.symbols, rule_var_ptr),
+            self.rules.display_cell(self.symbols, rule_cell_ptr)
+        );
+
         match term_ptr.get_kind() {
-            TermKind::Cell => match cell_ptr.get_polarity() {
-                Polarity::Pos => self.eval_redex(net, cell_ptr, term_ptr.get_cell()),
-                Polarity::Neg => self.eval_redex(net, term_ptr.get_cell(), cell_ptr),
-            },
+            TermKind::Cell => {
+                let (ctr_ptr, fun_ptr) = order_ctr_fun(cell_ptr, term_ptr.get_cell_ptr());
+                println!(
+                    "  ⟶  {} = {}",
+                    net.heap.display_cell(self.symbols, ctr_ptr),
+                    net.heap.display_cell(self.symbols, fun_ptr)
+                );
+
+                net.body.alloc(Equation::redex(ctr_ptr, fun_ptr));
+            }
             TermKind::Var => {
-                match net.try_set_var(term_ptr.get_var(), cell_ptr) {
-                    Some(other_cell_ptr) => match cell_ptr.get_polarity() {
-                        Polarity::Pos => self.eval_redex(net, cell_ptr, other_cell_ptr),
-                        Polarity::Neg => self.eval_redex(net, other_cell_ptr, cell_ptr),
-                    },
-                    None => net, // first try_set() call
+                let var = net.get_var(term_ptr.get_var_ptr());
+                match var.get_store().get_or_set(cell_ptr) {
+                    Some(other_cell_ptr) => {
+                        let (ctr_ptr, fun_ptr) = order_ctr_fun(cell_ptr, other_cell_ptr);
+                        println!(
+                            "  ⟶  {} = {}",
+                            net.heap.display_cell(self.symbols, ctr_ptr),
+                            net.heap.display_cell(self.symbols, fun_ptr)
+                        );
+                        net.body.alloc(Equation::redex(ctr_ptr, fun_ptr));
+                    }
+                    None => {
+                        println!(
+                            "  ⟶  {} ← {}",
+                            net.heap.display_var(self.symbols, term_ptr.get_var_ptr()),
+                            net.heap.display_cell(self.symbols, cell_ptr)
+                        );
+                    }
                 }
             }
         }
+        net
     }
 
-    fn rewrite_connect(
+    fn instantiate_connect(
         &mut self,
         mut net: Net,
+
         bvars: &mut BVarPtrs,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
@@ -220,31 +294,58 @@ impl<'a> Runtime<'a> {
         let left_port_ptr = self.instantiate_var(&net, bvars, ctr, fun, rule_left_var);
         let right_port_ptr = self.instantiate_var(&net, bvars, ctr, fun, rule_right_var);
 
+        print!(
+            "Instantiate connect: {} ↔ {}",
+            self.rules.display_var(self.symbols, rule_left_var),
+            self.rules.display_var(self.symbols, rule_right_var)
+        );
+
         match (left_port_ptr.get_kind(), right_port_ptr.get_kind()) {
-            (TermKind::Cell, TermKind::Cell) => match left_port_ptr.get_cell().get_polarity() {
-                Polarity::Pos => {
-                    self.eval_redex(net, left_port_ptr.get_cell(), right_port_ptr.get_cell())
-                }
-                Polarity::Neg => {
-                    self.eval_redex(net, right_port_ptr.get_cell(), left_port_ptr.get_cell())
-                }
-            },
+            (TermKind::Cell, TermKind::Cell) => {
+                let (ctr_ptr, fun_ptr) =
+                    order_ctr_fun(left_port_ptr.get_cell_ptr(), right_port_ptr.get_cell_ptr());
+                println!(
+                    "  ⟶  {} = {}",
+                    net.heap.display_cell(self.symbols, ctr_ptr),
+                    net.heap.display_cell(self.symbols, fun_ptr)
+                );
+                net.body.alloc(Equation::redex(ctr_ptr, fun_ptr));
+            }
             (TermKind::Cell, TermKind::Var) => {
                 // bind
-                net.bind(right_port_ptr.get_var(), left_port_ptr.get_cell());
-                net
+                println!(
+                    "  ⟶  {} ← {}",
+                    net.heap
+                        .display_var(self.symbols, right_port_ptr.get_var_ptr()),
+                    net.heap
+                        .display_cell(self.symbols, left_port_ptr.get_cell_ptr())
+                );
+                net.body.alloc(Equation::bind(right_port_ptr.get_var_ptr(), left_port_ptr.get_cell_ptr()));
             }
             (TermKind::Var, TermKind::Cell) => {
                 // bind
-                net.bind(left_port_ptr.get_var(), right_port_ptr.get_cell());
-                net
+                println!(
+                    "  ⟶  {} ← {}",
+                    net.heap
+                        .display_var(self.symbols, left_port_ptr.get_var_ptr()),
+                    net.heap
+                        .display_cell(self.symbols, right_port_ptr.get_cell_ptr())
+                );
+                net.body.alloc(Equation::bind(left_port_ptr.get_var_ptr(), right_port_ptr.get_cell_ptr()));
             }
             (TermKind::Var, TermKind::Var) => {
-                // bind
-                net.connect(left_port_ptr.get_var(), right_port_ptr.get_var());
-                net
+                // connect
+                println!(
+                    "  ⟶  {} ↔ {}",
+                    net.heap
+                        .display_var(self.symbols, right_port_ptr.get_var_ptr()),
+                    net.heap
+                        .display_var(self.symbols, right_port_ptr.get_var_ptr())
+                );
+                net.body.alloc(Equation::connect(left_port_ptr.get_var_ptr(), right_port_ptr.get_var_ptr()));
             }
         }
+        net
     }
 
     pub fn instantiate_cell(
@@ -273,11 +374,6 @@ impl<'a> Runtime<'a> {
                     .cell2(rule_cell.get_symbol_ptr(), left_port_ptr, right_port_ptr)
             }
         };
-        println!(
-            "Instantiating cell: {} --> {}",
-            self.rules.display_cell(self.symbols, rule_cell_ptr),
-            net.heap.display_cell(self.symbols, cell_ptr)
-        );
         cell_ptr
     }
 
@@ -291,9 +387,11 @@ impl<'a> Runtime<'a> {
     ) -> TermPtr {
         match rule_port_ptr.get_kind() {
             TermKind::Cell => self
-                .instantiate_cell(&mut net, bvars, ctr, fun, rule_port_ptr.get_cell())
+                .instantiate_cell(&mut net, bvars, ctr, fun, rule_port_ptr.get_cell_ptr())
                 .into(),
-            TermKind::Var => self.instantiate_var(net, bvars, ctr, fun, rule_port_ptr.get_var()),
+            TermKind::Var => {
+                self.instantiate_var(net, bvars, ctr, fun, rule_port_ptr.get_var_ptr())
+            }
         }
     }
 
@@ -305,29 +403,19 @@ impl<'a> Runtime<'a> {
         fun: Cell<NetF>,
         rule_var_ptr: VarPtr,
     ) -> TermPtr {
-        print!(
-            "Instantiating var: {}",
-            self.rules.display_var(self.symbols, rule_var_ptr)
-        );
         let rule_var = self.rules.heap.get_var(rule_var_ptr).unwrap();
-        let term_ptr = match &rule_var.0 {
-            RuleStore::Bound => bvars.get(rule_var_ptr).into(),
-            RuleStore::Free { port } => self.resolve_fvar(ctr, fun, *port),
-        };
-        println!(" --> {}", net.heap.display_term(self.symbols, term_ptr));
-        term_ptr
+        match rule_var {
+            Var::Bound(bvar_id) => bvars.get(*bvar_id).into(),
+            Var::Free(port) => self.resolve_fvar(ctr, fun, *port),
+        }
     }
 
     fn resolve_fvar(&self, ctr: Cell<NetF>, fun: Cell<NetF>, port: RulePort) -> TermPtr {
         match port {
-            RulePort::Ctr {
-                port: PortNum::Zero,
-            } => ctr.get_left_port(),
-            RulePort::Ctr { port: PortNum::One } => ctr.get_right_port(),
-            RulePort::Fun {
-                port: PortNum::Zero,
-            } => fun.get_left_port(),
-            RulePort::Fun { port: PortNum::One } => fun.get_right_port(),
+            RulePort::Ctr(PortNum::Zero) => ctr.get_left_port(),
+            RulePort::Ctr(PortNum::One) => ctr.get_right_port(),
+            RulePort::Fun(PortNum::Zero) => fun.get_left_port(),
+            RulePort::Fun(PortNum::One) => fun.get_right_port(),
         }
     }
 }

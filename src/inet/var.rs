@@ -89,11 +89,40 @@ impl From<TermPtr> for VarPtr {
 }
 
 #[derive(Debug)]
-pub struct Var<T: TermFamily>(pub T::Store);
+pub enum Var<T: TermFamily> {
+    Bound(T::BoundStore),
+    Free(T::FreeStore)
+}
+
 impl<T: TermFamily> Var<T> {
-    pub fn new(store: T::Store) -> Self {
-        Self(store)
+    pub fn bvar(store: T::BoundStore) -> Self {
+        Self::Bound(store)
     }
+
+    pub fn fvar(store: T::FreeStore) -> Self {
+        Self::Free(store)
+    }
+
+    pub fn is_bound(&self) -> bool {
+        match self {
+            Var::Bound(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_free(&self) -> bool {
+        match self {
+            Var::Free(_) => true,
+            _ => false,
+        }
+    }
+
+    // pub fn get_store(&self) -> &T::Store {
+    //     match self {
+    //         Var::Bound(store) => store,
+    //         Var::Free(store) => store,
+    //     }
+    // }
 
     pub fn to_ptr(&self, index: usize) -> VarPtr {
         VarPtr::new(index)

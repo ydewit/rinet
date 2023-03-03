@@ -1,20 +1,25 @@
-use std::{fmt::{Debug, Formatter, Binary}};
+use std::fmt::{Binary, Debug, Formatter};
 
-use super::{symbol::SymbolBook, heap::Heap, var::VarPtr, cell::CellPtr, BitSet32};
+use super::{
+    cell::CellPtr,
+    heap::Heap,
+    symbol::SymbolBook,
+    var::{Var, VarPtr},
+    BitSet32,
+};
 
 pub trait TermFamily: Clone {
-    type Store: Debug;
+    type BoundStore: Debug;
+    type FreeStore: Debug;
 
     fn display_store(
         f: &mut std::fmt::Formatter<'_>,
         symbols: &SymbolBook,
         heap: &Heap<Self>,
-        store: &Self::Store,
+        store: &Var<Self>,
         index: usize,
     ) -> std::fmt::Result;
 }
-
-
 
 #[derive(Debug, PartialEq)]
 pub enum TermKind {
@@ -86,12 +91,12 @@ impl TermPtr {
         TermKind::from(Self::KIND.get(self.0))
     }
 
-    pub fn get_var(&self) -> VarPtr {
+    pub fn get_var_ptr(&self) -> VarPtr {
         assert!(self.get_kind() == TermKind::Var);
         self.get_term().into()
     }
 
-    pub fn get_cell(&self) -> CellPtr {
+    pub fn get_cell_ptr(&self) -> CellPtr {
         assert!(self.get_kind() == TermKind::Cell);
         self.get_term().into()
     }
@@ -141,8 +146,8 @@ impl Debug for TermPtr {
         let mut b = f.debug_struct(&name);
         b.field("kind", &self.get_kind());
         match self.get_kind() {
-            TermKind::Cell => b.field("cell", &self.get_cell()),
-            TermKind::Var => b.field("var", &self.get_var()),
+            TermKind::Cell => b.field("cell", &self.get_cell_ptr()),
+            TermKind::Var => b.field("var", &self.get_var_ptr()),
         };
         b.finish()
     }

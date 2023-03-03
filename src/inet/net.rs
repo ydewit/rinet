@@ -6,7 +6,7 @@ use std::{
 use super::{
     arena::ArenaPtrIter,
     cell::{Cell, CellPtr},
-    equation::{Equation, EquationPtr, Equations, EquationsDisplay},
+    equation::{Equation, EquationPtr, Equations, EquationsDisplay, EquationDisplay},
     heap::Heap,
     symbol::{SymbolBook, SymbolPtr},
     term::{TermFamily, TermPtr},
@@ -16,58 +16,58 @@ use super::{
 #[derive(Debug, Copy, Clone)]
 pub struct NetF {}
 impl TermFamily for NetF {
-    type Store = NetStore;
+    type BoundStore = NetStore;
+    type FreeStore = NetStore;
 
     fn display_store(
         f: &mut std::fmt::Formatter<'_>,
         symbols: &SymbolBook,
         heap: &Heap<Self>,
-        store: &Self::Store,
+        var: &Var<NetF>,
         index: usize,
     ) -> std::fmt::Result {
-        match store.get() {
-            Some(cell_ptr) => heap.display_cell(symbols, cell_ptr).fmt(f),
-            None => write!(f, "_.{}", index),
+        match var {
+            Var::Bound(store) => {
+                match store.get_cell_ptr() {
+                    Some(cell_ptr) => {
+                        heap.display_cell(symbols, cell_ptr).fmt(f)
+                    },
+                    None => write!(f, "x{}", index)
+                }
+
+            },
+            Var::Free(_) => write!(f, "_.{}", index),
         }
     }
 }
 
 #[derive(Debug)]
 pub struct NetStore(AtomicU32);
+
 impl NetStore {
     const NULL: u32 = u32::MAX;
 
-    pub fn get(&self) -> Option<CellPtr> {
-        match self.0.load(Ordering::SeqCst) {
-            Self::NULL => None,
-            ptr => {
-                let other_cell_ptr = CellPtr::from(ptr);
-                // // only a Pos cell is "the real" value for a var. If
-                // // it is a Neg, then it is just a temporary value
-                // match other_cell_ptr.get_polarity() {
-                //     super::Polarity::Pos =>
-                Some(other_cell_ptr)
-                //     super::Polarity::Neg => None,
-                // }
-            }
+    pub fn get_cell_ptr(&self) -> Option<CellPtr> {
+        let value = self.0.load(Ordering::SeqCst);
+        if value != Self::NULL {
+            Some(CellPtr::from(value))
+        }
+        else {
+            return None
         }
     }
 
     pub fn get_or_set(&self, cell_ptr: CellPtr) -> Option<CellPtr> {
-        match self.0.swap(cell_ptr.get_ptr(), Ordering::SeqCst) {
-            // first time setting
-            Self::NULL => None,
-            // another cell_ptr already set
-            ptr => {
-                let other_cell_ptr = CellPtr::from(ptr);
-                // if other_cell_ptr.get_polarity() == Polarity::Pos {
-                //     // if a Neg cell_ptr bumped the Pos one out of the var, store it back
-                //     // The final value of a var should always be a Pos cell_ptr
-                //     // Note: there should be at most two calls to get_or_set()
-                //     self.0.store(other_cell_ptr.get_ptr(), Ordering::SeqCst);
-                // }
-                Some(other_cell_ptr)
+        let old_value = self.0.swap(cell_ptr.get_ptr(), Ordering::Acquire);
+        if old_value != Self::NULL {
+            if old_value != cell_ptr.get_ptr() {
+                return Some(CellPtr::from(old_value));
+            } else {
+                return None;
             }
+        }
+        else {
+            return None
         }
     }
 }
@@ -75,6 +75,16 @@ impl NetStore {
 impl Default for NetStore {
     fn default() -> Self {
         Self(AtomicU32::new(Self::NULL))
+    }
+}
+
+
+impl Var<NetF> {
+    pub fn get_store(&self) -> &NetStore {
+        match self {
+            Var::Bound(store) => store,
+            Var::Free(store) => store,
+        }
     }
 }
 
@@ -115,8 +125,12 @@ impl NetBuilder {
 
     // -------------------
 
-    pub fn var(&mut self) -> VarPtr {
-        self.net.var()
+    pub fn fvar(&mut self) -> VarPtr {
+        self.net.fvar()
+    }
+
+    pub fn bvar(&mut self) -> VarPtr {
+        self.net.bvar()
     }
 
     // -------------------
@@ -133,11 +147,11 @@ pub struct Net {
     pub heap: Heap<NetF>,
 }
 impl Net {
-    pub fn new<F: FnOnce(&mut NetBuilder)>(builderFn: F) -> Self {
-        Net::with_capacity([0, 0, 0], builderFn)
+    pub fn new<F: FnOnce(&mut NetBuilder)>(builder_fn: F) -> Self {
+        Net::with_capacity([0, 0, 0], builder_fn)
     }
 
-    pub fn with_capacity<F: FnOnce(&mut NetBuilder)>(capacity: [usize; 3], builderFn: F) -> Self {
+    pub fn with_capacity<F: FnOnce(&mut NetBuilder)>(capacity: [usize; 3], builder_fn: F) -> Self {
         let mut builder = NetBuilder {
             net: Net {
                 head: Vec::new(),
@@ -145,7 +159,7 @@ impl Net {
                 heap: Heap::with_capacity(capacity[1], capacity[2]),
             },
         };
-        builderFn(&mut builder);
+        builder_fn(&mut builder);
         builder.build()
     }
 
@@ -204,17 +218,18 @@ impl Net {
         &self.heap.get_var(ptr).unwrap()
     }
 
-    pub fn try_set_var(&mut self, var_ptr: VarPtr, cell_ptr: CellPtr) -> Option<CellPtr> {
-        match self.heap.get_var(var_ptr).unwrap().0.get_or_set(cell_ptr) {
-            Some(other_cell_ptr) => Some(other_cell_ptr),
-            None => None,
-        }
-    }
-
-    pub fn var(&mut self) -> VarPtr {
-        let ptr = self.heap.var(NetStore::default());
+    pub fn fvar(&mut self) -> VarPtr {
+        let ptr = self.heap.fvar(NetStore::default());
         self.head.push(ptr);
         ptr
+    }
+
+    pub fn bvar(&mut self) -> VarPtr {
+        self.heap.bvar(NetStore::default())
+    }
+
+    pub fn display_head<'a>(&'a self, symbols: &'a SymbolBook) -> HeadDisplay {
+        HeadDisplay { symbols, net: self }
     }
 
     pub fn display_body<'a>(&'a self, symbols: &'a SymbolBook) -> EquationsDisplay<'a, NetF> {
@@ -225,8 +240,15 @@ impl Net {
         }
     }
 
+    pub fn display_equation<'a>(&'a self, symbols: &'a SymbolBook, equation: &'a Equation<NetF>) -> EquationDisplay<'a, NetF> {
+        EquationDisplay {
+            equation,
+            symbols,
+            heap: &self.heap,
+        }
+    }
     pub fn display_net<'a>(&'a self, symbols: &'a SymbolBook) -> NetDisplay {
-        NetDisplay::new(symbols, self)
+        NetDisplay { symbols, net: self }
     }
 }
 
@@ -235,50 +257,33 @@ pub struct NetDisplay<'a> {
     net: &'a Net,
 }
 
-impl<'a> NetDisplay<'a> {
-    pub fn new(symbols: &'a SymbolBook, net: &'a Net) -> Self {
-        Self { symbols, net }
-    }
-
-    fn to_equations_item(&self) -> EquationsDisplay<NetF> {
-        EquationsDisplay {
-            symbols: self.symbols,
-            body: &self.net.body,
-            heap: &self.net.heap,
-        }
-    }
-
-    fn to_head_item(&self) -> HeadVarsItem {
-        HeadVarsItem {
-            symbols: self.symbols,
-            net: self.net,
-        }
-    }
-}
-
 impl<'a> Display for NetDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "< {} | {} >",
-            self.to_head_item(),
-            self.to_equations_item()
+            self.net.display_head(self.symbols),
+            self.net.display_body(self.symbols)
         )
     }
 }
 
-pub struct HeadVarsItem<'a> {
+pub struct HeadDisplay<'a> {
     symbols: &'a SymbolBook,
     net: &'a Net,
 }
-impl<'a> Display for HeadVarsItem<'a> {
+impl<'a> Display for HeadDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.net.head.iter().fold(Ok(()), |result, fvar_ptr| {
             result.and_then(|_| {
                 let fvar = self.net.get_var(*fvar_ptr);
-                match fvar.0.get() {
-                    Some(cell_ptr) => self.net.heap.display_cell(self.symbols, cell_ptr).fmt(f),
-                    None => write!(f, "_.{}", fvar_ptr.get_index()),
+                assert!(fvar.is_free());
+                match fvar {
+                    Var::Bound(_) => unreachable!(),
+                    Var::Free(store) => match store.get_cell_ptr() {
+                        Some(cell_ptr) => self.net.heap.display_cell(self.symbols, cell_ptr).fmt(f),
+                        None => write!(f, "_.{}", fvar_ptr.get_index()),
+                    },
                 }
             })
         })
