@@ -9,10 +9,11 @@ use super::{
     arena::{Arena, ArenaPtr, ArenaValue},
     cell::CellPtr,
     heap::Heap,
+    net::NetF,
     symbol::{SymbolBook, SymbolName},
-    term::{TermFamily, TermPtr, TermKind},
+    term::{TermFamily, TermKind, TermPtr},
     var::VarPtr,
-    BitSet16, BitSet64, net::NetF,
+    BitSet16, BitSet64,
 };
 
 #[derive(Debug, PartialEq)]
@@ -375,21 +376,24 @@ impl<'a, T: TermFamily> Display for EquationsDisplay<'a, T> {
     }
 }
 
-
-
 pub struct EquationBuilder<'a, F: TermFamily = NetF> {
     symbols: &'a SymbolBook,
     head: &'a mut Vec<VarPtr>,
     equations: &'a mut Equations<F>,
-    heap: &'a mut Heap<F>
+    heap: &'a mut Heap<F>,
 }
 impl<'a, F: TermFamily> EquationBuilder<'a, F> {
-    pub(crate) fn new(symbols: &'a SymbolBook, head: &'a mut Vec<VarPtr>, equations: &'a mut Equations<F>, heap: &'a mut Heap<F>) -> Self {
+    pub(crate) fn new(
+        symbols: &'a SymbolBook,
+        head: &'a mut Vec<VarPtr>,
+        equations: &'a mut Equations<F>,
+        heap: &'a mut Heap<F>,
+    ) -> Self {
         Self {
             symbols,
             head,
             equations,
-            heap
+            heap,
         }
     }
 
@@ -417,20 +421,21 @@ impl<'a, F: TermFamily> EquationBuilder<'a, F> {
     pub fn cell1(&mut self, name: &SymbolName, left_port: TermPtr) -> CellPtr {
         let symbol_ptr = self.symbols.get_by_name(name).unwrap(); // TODO better error handling
         let symbol = self.symbols.get(symbol_ptr);
-        left_port.get_polarity().map(|pol| assert!(pol.is_opposite(symbol.get_left_polarity())));
+        left_port
+            .get_polarity()
+            .map(|pol| assert!(pol.is_opposite(symbol.get_left_polarity())));
         self.heap.cell1(symbol_ptr, left_port)
     }
 
-    pub fn cell2(
-        &mut self,
-        name: &SymbolName,
-        left_port: TermPtr,
-        right_port: TermPtr,
-    ) -> CellPtr {
+    pub fn cell2(&mut self, name: &SymbolName, left_port: TermPtr, right_port: TermPtr) -> CellPtr {
         let symbol_ptr = self.symbols.get_by_name(name).unwrap(); // TODO better error handling
         let symbol = self.symbols.get(symbol_ptr);
-        left_port.get_polarity().map(|pol| assert!(pol.is_opposite(symbol.get_left_polarity())));
-        right_port.get_polarity().map(|pol| assert!(pol.is_opposite(symbol.get_right_polarity())));
+        left_port
+            .get_polarity()
+            .map(|pol| assert!(pol.is_opposite(symbol.get_left_polarity())));
+        right_port
+            .get_polarity()
+            .map(|pol| assert!(pol.is_opposite(symbol.get_right_polarity())));
         self.heap.cell2(symbol_ptr, left_port, right_port)
     }
 
@@ -440,8 +445,6 @@ impl<'a, F: TermFamily> EquationBuilder<'a, F> {
         let ptr = self.heap.fvar(F::FreeStore::default());
         self.head.push(ptr);
         ptr
-
-
     }
 
     pub fn bvar(&mut self) -> VarPtr {
@@ -454,9 +457,6 @@ impl<'a, F: TermFamily> EquationBuilder<'a, F> {
         self
     }
 }
-
-
-
 
 #[cfg(test)]
 mod tests {

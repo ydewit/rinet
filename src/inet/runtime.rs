@@ -107,9 +107,15 @@ impl<'a> Runtime<'a> {
         // find rule
         let rule_ptr = self
             .rules
-            .get_by_symbols(ctr.get_symbol_ptr(), fun.get_symbol_ptr()).or_else(||{
-                panic!("Rule not found for: {} >< {}", self.symbols.get_name(ctr.get_symbol_ptr()).unwrap(), self.symbols.get_name(fun.get_symbol_ptr()).unwrap())
-            }).unwrap();
+            .get_by_symbols(ctr.get_symbol_ptr(), fun.get_symbol_ptr())
+            .or_else(|| {
+                panic!(
+                    "Rule not found for: {} >< {}",
+                    self.symbols.get_name(ctr.get_symbol_ptr()).unwrap(),
+                    self.symbols.get_name(fun.get_symbol_ptr()).unwrap()
+                )
+            })
+            .unwrap();
         let rule = self.rules.get_rule(rule_ptr);
 
         // println!(

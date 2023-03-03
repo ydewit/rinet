@@ -6,7 +6,7 @@ use crate::inet::{
     Polarity,
 };
 
-use super::{nat::{Z, S}};
+use super::nat::{S, Z};
 
 pub const DUP: SymbolName = SymbolName("dup");
 
@@ -59,6 +59,5 @@ impl<'a> RuleBook<'a> {
             let s1 = b.cell1(&S, x1.into());
             b.bind(r1.into(), s1.into());
         });
-
     }
 }

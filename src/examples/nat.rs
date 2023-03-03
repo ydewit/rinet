@@ -1,12 +1,17 @@
-use crate::inet::{equation::EquationBuilder, cell::CellPtr, symbol::{SymbolName, SymbolBook}, Polarity};
+use crate::inet::{
+    cell::CellPtr,
+    equation::EquationBuilder,
+    symbol::{SymbolBook, SymbolName},
+    Polarity,
+};
 
 // Nats
 
-pub const Z : SymbolName = SymbolName("Z");
-pub const S : SymbolName = SymbolName("S");
+pub const Z: SymbolName = SymbolName("Z");
+pub const S: SymbolName = SymbolName("S");
 
 impl SymbolBook {
-    pub fn declare_nat_symbols(&mut self){
+    pub fn declare_nat_symbols(&mut self) {
         // Z
         self.ctr0(&Z);
 

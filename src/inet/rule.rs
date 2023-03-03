@@ -6,10 +6,10 @@ use std::{
 
 use super::{
     arena::{Arena, ArenaPtr, ArenaValue},
-    cell::{CellPtr},
+    cell::CellPtr,
     equation::{Equation, EquationDisplay, EquationPtr, Equations},
     heap::{CellDisplay, Heap, VarDisplay},
-    symbol::{SymbolArity, SymbolBook, SymbolPtr, SymbolName},
+    symbol::{SymbolArity, SymbolBook, SymbolName, SymbolPtr},
     term::{TermFamily, TermPtr},
     var::{Var, VarPtr},
     BitSet16,
@@ -207,12 +207,7 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
         self.rules.heap.cell1(symbol_ptr, port)
     }
 
-    pub fn cell2(
-        &mut self,
-        name: &SymbolName,
-        left_port: TermPtr,
-        right_port: TermPtr,
-    ) -> CellPtr {
+    pub fn cell2(&mut self, name: &SymbolName, left_port: TermPtr, right_port: TermPtr) -> CellPtr {
         let symbol_ptr = self.rules.symbols.get_by_name(name).unwrap();
         self.rules.heap.cell2(symbol_ptr, left_port, right_port)
     }
@@ -220,7 +215,10 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
     /// ------------------------------------------------
 
     pub fn ctr_port_0(&mut self) -> VarPtr {
-        assert!(self.rule.ctr.get_arity() == SymbolArity::One || self.rule.ctr.get_arity() == SymbolArity::Two);
+        assert!(
+            self.rule.ctr.get_arity() == SymbolArity::One
+                || self.rule.ctr.get_arity() == SymbolArity::Two
+        );
         let var_ptr = self.rules.heap.fvar(RulePort::Ctr(PortNum::Zero));
         self.rule.fvar_ptrs.push(var_ptr);
         var_ptr
@@ -234,7 +232,10 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
     }
 
     pub fn fun_port_0(&mut self) -> VarPtr {
-        assert!(self.rule.fun.get_arity() == SymbolArity::One || self.rule.fun.get_arity() == SymbolArity::Two);
+        assert!(
+            self.rule.fun.get_arity() == SymbolArity::One
+                || self.rule.fun.get_arity() == SymbolArity::Two
+        );
         let var_ptr = self.rules.heap.fvar(RulePort::Fun(PortNum::Zero));
         self.rule.fvar_ptrs.push(var_ptr);
         var_ptr
@@ -297,7 +298,7 @@ impl<'a> RuleBook<'a> {
         let key = RuleBook::to_key(ctr, fun);
         match self.rule_by_symbols.get(&key) {
             Some(index) => Some(RulePtr::new(*index)),
-            None => None
+            None => None,
         }
     }
 

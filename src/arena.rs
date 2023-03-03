@@ -33,15 +33,13 @@ use std::marker::PhantomData;
 const DEFAULT_ENTRY_CAPACITY: usize = 100;
 const DEFAULT_FREE_CAPACITY: usize = 20;
 
-
 /// A typed identifier for an arena allocation
 #[derive(Debug, PartialEq, Eq)]
 struct ArenaId<T> {
     index: usize,
     generation: u64,
-    _t: PhantomData<T>
+    _t: PhantomData<T>,
 }
-
 
 impl<T> ArenaId<T> {
     fn next_generation(&mut self) -> &mut Self {
@@ -52,23 +50,26 @@ impl<T> ArenaId<T> {
 
 impl<T> Clone for ArenaId<T> {
     fn clone(&self) -> Self {
-        Self { index: self.index, generation: self.generation, _t: PhantomData }
+        Self {
+            index: self.index,
+            generation: self.generation,
+            _t: PhantomData,
+        }
     }
 
-    fn clone_from(&mut self, source: &Self){
+    fn clone_from(&mut self, source: &Self) {
         self.index = source.index;
         self.generation = source.generation;
         self._t = source._t;
     }
 }
 
-impl<T> Copy for ArenaId<T> {
-}
+impl<T> Copy for ArenaId<T> {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum ValueEntry<T> {
     Occupied { value: T, generation: u64 },
-    Free { free_index: usize }
+    Free { free_index: usize },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -85,7 +86,10 @@ impl<T> Arena<T> {
 
     #[inline]
     pub fn with_capacity(entries_capacity: usize, free_capacity: usize) -> Self {
-        Self { entries: Vec::with_capacity(entries_capacity), free: Vec::with_capacity(free_capacity) }
+        Self {
+            entries: Vec::with_capacity(entries_capacity),
+            free: Vec::with_capacity(free_capacity),
+        }
     }
 
     #[inline]
@@ -96,25 +100,29 @@ impl<T> Arena<T> {
     #[inline]
     pub fn alloc(&mut self, value: T) -> ArenaId<T> {
         let index = self.entries.len();
-        self.entries.push( ValueEntry::Occupied { value: value, generation: 0 } );
-        Id::new(index, 0 )
+        self.entries.push(ValueEntry::Occupied {
+            value: value,
+            generation: 0,
+        });
+        Id::new(index, 0)
     }
 
     #[inline]
     pub fn alloc_with<C: FnOnce() -> T>(&mut self, create_fn: C) -> ArenaId<T> {
         let index = self.entries.len();
-        self.entries.push(ValueEntry::Occupied { value: create_fn(), generation: 0 });
-        Id::new(index, 0 )
+        self.entries.push(ValueEntry::Occupied {
+            value: create_fn(),
+            generation: 0,
+        });
+        Id::new(index, 0)
     }
 
     #[inline]
     pub fn get(&self, id: &ArenaId<T>) -> Option<&T> {
         match self.entries.get(id.index) {
-            Some(entry) => {
-                match entry {
-                    ValueEntry::Occupied { value, generation } => Some(value),
-                    ValueEntry::Free { free_index } => None,
-                }
+            Some(entry) => match entry {
+                ValueEntry::Occupied { value, generation } => Some(value),
+                ValueEntry::Free { free_index } => None,
             },
             None => None,
         }
@@ -122,16 +130,17 @@ impl<T> Arena<T> {
 
     pub fn remove(&mut self, id: &ArenaId<T>) -> Option<T> {
         if id.index >= self.entries.len() {
-            return None
+            return None;
         }
 
         let entry = &self.entries[id.index];
         if let ValueEntry::Free { free_index } = entry {
-            return None
+            return None;
         }
 
         let free_index = self.free.len();
-        let old_entry = std::mem::replace(&mut self.entries[id.index], ValueEntry::Free { free_index });
+        let old_entry =
+            std::mem::replace(&mut self.entries[id.index], ValueEntry::Free { free_index });
         match old_entry {
             ValueEntry::Occupied { value, .. } => Some(value),
             ValueEntry::Free { .. } => None,

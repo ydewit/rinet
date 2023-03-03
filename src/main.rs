@@ -8,15 +8,7 @@ fn main() {
     inet_main()
 }
 
-use crate::inet::{
-    cell::CellPtr,
-    equation::{EquationBuilder, EquationPtr},
-    net::Net,
-    rule::RuleBook,
-    runtime::Runtime,
-    symbol::SymbolBook,
-    Polarity,
-};
+use crate::inet::{net::Net, rule::RuleBook, runtime::Runtime, symbol::SymbolBook};
 
 mod examples;
 
@@ -70,16 +62,47 @@ pub fn inet_main() {
         b.add(two, adder);
     });
 
-    // -- def sub1 := init
-    // #eval eval "sub2-1" [ ⟨Sub (fvar 0) Two, One⟩ ]
-    // #eval eval "sub3-2" [ ⟨Sub (fvar 0) (natToTerm 3), Two⟩ ]
-    // #eval eval "sub3-0" [ ⟨Sub (fvar 0) (natToTerm 3), Z⟩ ]
-    // #eval eval "sub1-2" [ ⟨Sub (fvar 0) One, Two⟩ ]
-    // net.equations(|b| {
-    //     let result = b.fvar();
+    // 2 - 1 = 1
+    net.equations(|b| {
+        let result = b.fvar();
+        let one = b.one();
+        let subtractor = b.subtractor(result.into(), one.into());
 
-    //     let a = b.zero();
-    // });
+        let two = b.two();
+        b.subtract(two, subtractor);
+    });
+
+    // 3 - 2 = 1
+    net.equations(|b| {
+        let result = b.fvar();
+        let two = b.two();
+        let three = b.succ(two.into());
+        let subtractor = b.subtractor(result.into(), three.into());
+
+        let two = b.two();
+        b.subtract(two, subtractor);
+    });
+
+    // 3 - 0 = 0
+    net.equations(|b| {
+        let result = b.fvar();
+        let two = b.two();
+        let three = b.succ(two.into());
+        let subtractor = b.subtractor(result.into(), three.into());
+
+        let zero = b.zero();
+        b.subtract(zero, subtractor);
+    });
+
+    // 1 - 2 = 0
+    net.equations(|b| {
+        let result = b.fvar();
+        let one = b.two();
+        let subtractor = b.subtractor(result.into(), one.into());
+
+        let two = b.two();
+        b.subtract(two, subtractor);
+    });
 
     println!("{}", net);
 

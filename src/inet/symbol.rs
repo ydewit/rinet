@@ -340,7 +340,12 @@ impl SymbolBook {
         self.declare1(name, Polarity::Pos, port_polarity)
     }
 
-    pub fn ctr2(&mut self, name: &SymbolName, left_polarity: Polarity, right_polarity: Polarity) -> SymbolPtr {
+    pub fn ctr2(
+        &mut self,
+        name: &SymbolName,
+        left_polarity: Polarity,
+        right_polarity: Polarity,
+    ) -> SymbolPtr {
         self.declare2(name, Polarity::Pos, left_polarity, right_polarity)
     }
 
@@ -352,14 +357,18 @@ impl SymbolBook {
         self.declare1(name, Polarity::Neg, port_polarity)
     }
 
-    pub fn fun2(&mut self, name: &SymbolName, left_polarity: Polarity, right_polarity: Polarity) -> SymbolPtr {
+    pub fn fun2(
+        &mut self,
+        name: &SymbolName,
+        left_polarity: Polarity,
+        right_polarity: Polarity,
+    ) -> SymbolPtr {
         self.declare2(name, Polarity::Neg, left_polarity, right_polarity)
     }
 
     fn declare0(&mut self, name: &SymbolName, polarity: Polarity) -> SymbolPtr {
         let ptr = self.add_symbol(Symbol::new0(polarity));
-        self.symbol_by_name
-            .insert(name.clone(), ptr.get_index());
+        self.symbol_by_name.insert(name.clone(), ptr.get_index());
         self.name_by_symbol.insert(ptr.get_index(), name.clone());
         ptr
     }
@@ -371,8 +380,7 @@ impl SymbolBook {
         left_port_polarity: Polarity,
     ) -> SymbolPtr {
         let ptr = self.add_symbol(Symbol::new1(polarity, left_port_polarity));
-        self.symbol_by_name
-            .insert(name.clone(), ptr.get_index());
+        self.symbol_by_name.insert(name.clone(), ptr.get_index());
         self.name_by_symbol.insert(ptr.get_index(), name.clone());
         ptr
     }
@@ -389,8 +397,7 @@ impl SymbolBook {
             left_port_polarity,
             right_port_polarity,
         ));
-        self.symbol_by_name
-            .insert(name.clone(), ptr.get_index());
+        self.symbol_by_name.insert(name.clone(), ptr.get_index());
         self.name_by_symbol.insert(ptr.get_index(), name.clone());
         ptr
     }

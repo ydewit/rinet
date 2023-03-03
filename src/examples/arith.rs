@@ -40,7 +40,7 @@ impl<'a> EquationBuilder<'a> {
         result: TermPtr,   // port 0
         operand2: TermPtr, // port 1
     ) -> CellPtr {
-        self.cell2(&ADD, result.into(), operand2.into())
+        self.cell2(&SUB, result.into(), operand2.into())
     }
 
     // add redex
