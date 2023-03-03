@@ -9,8 +9,8 @@ use super::{
 };
 
 pub trait TermFamily: Clone {
-    type BoundStore: Debug;
-    type FreeStore: Debug;
+    type BoundStore: Default + Debug;
+    type FreeStore: Default + Debug;
 
     fn display_store(
         f: &mut std::fmt::Formatter<'_>,

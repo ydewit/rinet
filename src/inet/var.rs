@@ -91,7 +91,7 @@ impl From<TermPtr> for VarPtr {
 #[derive(Debug)]
 pub enum Var<T: TermFamily> {
     Bound(T::BoundStore),
-    Free(T::FreeStore)
+    Free(T::FreeStore),
 }
 
 impl<T: TermFamily> Var<T> {

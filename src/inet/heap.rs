@@ -151,7 +151,7 @@ impl<'a, T: TermFamily> Display for CellDisplay<'a, T> {
             None => panic!("Cell {:?} not found", self.cell_ptr),
         };
 
-        let name = self.symbols.get_name(cell.get_symbol_ptr());
+        let name = self.symbols.get_name(cell.get_symbol_ptr()).unwrap();
         let symbol = self.symbols.get(cell.get_symbol_ptr());
         match symbol.get_arity() {
             SymbolArity::Zero => {

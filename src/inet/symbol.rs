@@ -1,4 +1,7 @@
-use std::fmt::{Binary, Debug, Display, Formatter};
+use std::{
+    collections::HashMap,
+    fmt::{Binary, Debug, Display, Formatter},
+};
 
 use super::{BitSet16, BitSet8, Polarity};
 
@@ -263,7 +266,7 @@ pub struct SymbolItem<'a> {
 }
 impl<'a> Display for SymbolItem<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = self.symbols.get_name(self.symbol_ptr);
+        let name = self.symbols.get_name(self.symbol_ptr).unwrap();
         let symbol = self.symbols.get(self.symbol_ptr);
         match symbol.get_arity() {
             SymbolArity::Zero => {
@@ -288,64 +291,96 @@ impl<'a> Display for SymbolItem<'a> {
 #[derive(Debug)]
 pub struct SymbolBook {
     symbols: Vec<Symbol>,
-    names: Vec<String>,
+    symbol_by_name: HashMap<String, usize>,
+    name_by_symbol: HashMap<usize, String>,
 }
 
 impl SymbolBook {
     pub fn new() -> Self {
         Self {
             symbols: Vec::new(),
-            names: Vec::new(),
+            symbol_by_name: HashMap::new(),
+            name_by_symbol: HashMap::new(),
         }
     }
 
-    pub fn add_symbol0(&mut self, name: &str, polarity: Polarity) -> SymbolPtr {
-        self.names.push(name.to_string());
-        self.push_symbol(Symbol::new0(polarity))
+    pub fn len(&self) -> usize {
+        self.symbols.len()
     }
 
-    pub fn add_symbol1(
+    pub fn declare0(&mut self, name: &str, polarity: Polarity) -> SymbolPtr {
+        let ptr = self.add_symbol(Symbol::new0(polarity));
+        self.symbol_by_name
+            .insert(name.to_string(), ptr.get_index());
+        self.name_by_symbol.insert(ptr.get_index(), name.to_string());
+        ptr
+    }
+
+    pub fn declare1(
         &mut self,
         name: &str,
         polarity: Polarity,
         left_port_polarity: Polarity,
     ) -> SymbolPtr {
-        self.names.push(name.to_string());
-        self.push_symbol(Symbol::new1(polarity, left_port_polarity))
+        let ptr = self.add_symbol(Symbol::new1(polarity, left_port_polarity));
+        self.symbol_by_name
+            .insert(name.to_string(), ptr.get_index());
+        self.name_by_symbol.insert(ptr.get_index(), name.to_string());
+        ptr
     }
 
-    pub fn add_symbol2(
+    pub fn declare2(
         &mut self,
         name: &str,
         polarity: Polarity,
         left_port_polarity: Polarity,
         right_port_polarity: Polarity,
     ) -> SymbolPtr {
-        self.names.push(name.to_string());
-        self.push_symbol(Symbol::new2(
+        let ptr = self.add_symbol(Symbol::new2(
             polarity,
             left_port_polarity,
             right_port_polarity,
-        ))
+        ));
+        self.symbol_by_name
+            .insert(name.to_string(), ptr.get_index());
+        self.name_by_symbol.insert(ptr.get_index(), name.to_string());
+        ptr
     }
 
     pub fn get(&self, symbol_ptr: SymbolPtr) -> Symbol {
         self.symbols[symbol_ptr.get_index()]
     }
 
-    fn push_symbol(&mut self, symbol: Symbol) -> SymbolPtr {
+    pub fn get_by_name(&self, name: &str) -> Option<SymbolPtr> {
+        match self.symbol_by_name.get(name) {
+            Some(index) => {
+                let symbol = self.symbols[*index];
+                Some(symbol.to_ptr(*index))
+            }
+            None => None,
+        }
+    }
+
+    fn add_symbol(&mut self, symbol: Symbol) -> SymbolPtr {
         let index = self.symbols.len();
         let ptr = symbol.to_ptr(index);
         self.symbols.push(symbol);
         ptr
     }
 
-    pub fn get_name(&self, symbol: SymbolPtr) -> String {
-        self.names[symbol.get_index()].to_string()
+    pub fn get_name(&self, symbol: SymbolPtr) -> Option<String> {
+        self.name_by_symbol.get(&symbol.get_index()).cloned()
     }
 
-    pub fn iter<'a>(&'a self) -> SymbolBookIter<'a> {
-        SymbolBookIter::new(&self.symbols, &self.names)
+    pub fn iter(&self) -> impl Iterator<Item = NamedSymbol> {
+        self.symbols.iter().enumerate().map(|(index, symbol)| {
+            let name = self.name_by_symbol.get(&index).cloned().unwrap();
+            NamedSymbol {
+                index,
+                symbol,
+                name,
+            }
+        })
     }
 
     pub fn display_symbol<'a>(&'a self, symbol_ptr: SymbolPtr) -> SymbolItem {
@@ -356,49 +391,13 @@ impl SymbolBook {
     }
 }
 
-pub struct SymbolBookIter<'a> {
-    index: usize,
-    entries: &'a Vec<Symbol>,
-    names: &'a Vec<String>,
-}
-
-impl<'a> SymbolBookIter<'a> {
-    pub fn new(entries: &'a Vec<Symbol>, names: &'a Vec<String>) -> Self {
-        Self {
-            index: 0,
-            entries,
-            names,
-        }
-    }
-}
-
-impl<'a> Iterator for SymbolBookIter<'a> {
-    type Item = NamedSymbol;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.entries.len() {
-            let index = self.index;
-            let symbol = &self.entries[self.index];
-            let name = &self.names[self.index];
-            self.index += 1;
-            Some(NamedSymbol {
-                index,
-                name: name.to_string(),
-                symbol: symbol.clone(),
-            })
-        } else {
-            None
-        }
-    }
-}
-
-pub struct NamedSymbol {
+pub struct NamedSymbol<'a> {
     index: usize,
     name: String,
-    symbol: Symbol,
+    symbol: &'a Symbol,
 }
 
-impl Display for NamedSymbol {
+impl<'a> Display for NamedSymbol<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.symbol.get_arity() {
             SymbolArity::Zero => write!(

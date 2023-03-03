@@ -2,15 +2,15 @@ use std::fmt::Display;
 
 pub mod arena;
 pub mod cell;
-pub mod var;
-pub mod heap;
 pub mod equation;
+pub mod heap;
 pub mod net;
 pub mod rule;
 pub mod runtime;
 pub mod symbol;
 pub mod term;
 pub mod util;
+pub mod var;
 
 /// ## Polarity
 ///

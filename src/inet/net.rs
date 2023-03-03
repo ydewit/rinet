@@ -1,12 +1,17 @@
 use std::{
     fmt::Display,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
 };
 
 use super::{
     arena::ArenaPtrIter,
     cell::{Cell, CellPtr},
-    equation::{Equation, EquationPtr, Equations, EquationsDisplay, EquationDisplay},
+    equation::{
+        Equation, EquationBuilder, EquationDisplay, EquationPtr, Equations, EquationsDisplay,
+    },
     heap::Heap,
     symbol::{SymbolBook, SymbolPtr},
     term::{TermFamily, TermPtr},
@@ -27,14 +32,9 @@ impl TermFamily for NetF {
         index: usize,
     ) -> std::fmt::Result {
         match var {
-            Var::Bound(store) => {
-                match store.get_cell_ptr() {
-                    Some(cell_ptr) => {
-                        heap.display_cell(symbols, cell_ptr).fmt(f)
-                    },
-                    None => write!(f, "x{}", index)
-                }
-
+            Var::Bound(store) => match store.get_cell_ptr() {
+                Some(cell_ptr) => heap.display_cell(symbols, cell_ptr).fmt(f),
+                None => write!(f, "x{}", index),
             },
             Var::Free(_) => write!(f, "_.{}", index),
         }
@@ -51,9 +51,8 @@ impl NetStore {
         let value = self.0.load(Ordering::SeqCst);
         if value != Self::NULL {
             Some(CellPtr::from(value))
-        }
-        else {
-            return None
+        } else {
+            return None;
         }
     }
 
@@ -65,9 +64,8 @@ impl NetStore {
             } else {
                 return None;
             }
-        }
-        else {
-            return None
+        } else {
+            return None;
         }
     }
 }
@@ -78,7 +76,6 @@ impl Default for NetStore {
     }
 }
 
-
 impl Var<NetF> {
     pub fn get_store(&self) -> &NetStore {
         match self {
@@ -88,113 +85,95 @@ impl Var<NetF> {
     }
 }
 
-pub struct NetBuilder {
-    net: Net,
-}
-impl NetBuilder {
-    pub fn redex(&mut self, ctr_ptr: CellPtr, fun_ptr: CellPtr) -> EquationPtr {
-        self.net.redex(ctr_ptr, fun_ptr)
-    }
+// pub struct NetBuilder<'a> {
+//     net: Net<'a>,
+// }
+// impl<'a> NetBuilder<'a> {
+//     pub fn redex(&mut self, ctr_ptr: CellPtr, fun_ptr: CellPtr) -> EquationPtr {
+//         self.net.redex(ctr_ptr, fun_ptr)
+//     }
 
-    pub fn bind(&mut self, var_ptr: VarPtr, cell_ptr: CellPtr) -> EquationPtr {
-        self.net.bind(var_ptr, cell_ptr)
-    }
+//     pub fn bind(&mut self, var_ptr: VarPtr, cell_ptr: CellPtr) -> EquationPtr {
+//         self.net.bind(var_ptr, cell_ptr)
+//     }
 
-    pub fn connect(&mut self, left_ptr: VarPtr, right_ptr: VarPtr) -> EquationPtr {
-        self.net.connect(left_ptr, right_ptr)
-    }
+//     pub fn connect(&mut self, left_ptr: VarPtr, right_ptr: VarPtr) -> EquationPtr {
+//         self.net.connect(left_ptr, right_ptr)
+//     }
 
-    // ----------------
+//     // ----------------
 
-    pub fn cell0(&mut self, symbol_ptr: SymbolPtr) -> CellPtr {
-        self.net.heap.cell0(symbol_ptr)
-    }
+//     pub fn cell0(&mut self, symbol_ptr: SymbolPtr) -> CellPtr {
+//         self.net.heap.cell0(symbol_ptr)
+//     }
 
-    pub fn cell1(&mut self, symbol_ptr: SymbolPtr, left_port: TermPtr) -> CellPtr {
-        self.net.heap.cell1(symbol_ptr, left_port)
-    }
+//     pub fn cell1(&mut self, symbol_ptr: SymbolPtr, left_port: TermPtr) -> CellPtr {
+//         self.net.heap.cell1(symbol_ptr, left_port)
+//     }
 
-    pub fn cell2(
-        &mut self,
-        symbol_ptr: SymbolPtr,
-        left_port: TermPtr,
-        right_port: TermPtr,
-    ) -> CellPtr {
-        self.net.heap.cell2(symbol_ptr, left_port, right_port)
-    }
+//     pub fn cell2(
+//         &mut self,
+//         symbol_ptr: SymbolPtr,
+//         left_port: TermPtr,
+//         right_port: TermPtr,
+//     ) -> CellPtr {
+//         self.net.heap.cell2(symbol_ptr, left_port, right_port)
+//     }
 
-    // -------------------
+//     // -------------------
 
-    pub fn fvar(&mut self) -> VarPtr {
-        self.net.fvar()
-    }
+//     pub fn fvar(&mut self) -> VarPtr {
+//         self.net.fvar()
+//     }
 
-    pub fn bvar(&mut self) -> VarPtr {
-        self.net.bvar()
-    }
+//     pub fn bvar(&mut self) -> VarPtr {
+//         self.net.bvar()
+//     }
 
-    // -------------------
+//     // -------------------
 
-    fn build(self) -> Net {
-        self.net
-    }
-}
+//     fn build(self) -> Net<'a> {
+//         self.net
+//     }
+// }
 
 #[derive(Debug)]
-pub struct Net {
+pub struct Net<'a> {
+    symbols: &'a SymbolBook,
     pub head: Vec<VarPtr>,
     pub body: Equations<NetF>,
     pub heap: Heap<NetF>,
 }
-impl Net {
-    pub fn new<F: FnOnce(&mut NetBuilder)>(builder_fn: F) -> Self {
-        Net::with_capacity([0, 0, 0], builder_fn)
+impl<'a> Net<'a> {
+    pub fn new(symbols: &'a SymbolBook) -> Self {
+        Net::with_capacity(symbols, [0, 0, 0])
     }
 
-    pub fn with_capacity<F: FnOnce(&mut NetBuilder)>(capacity: [usize; 3], builder_fn: F) -> Self {
-        let mut builder = NetBuilder {
-            net: Net {
-                head: Vec::new(),
-                body: Equations::with_capacity(capacity[0]),
-                heap: Heap::with_capacity(capacity[1], capacity[2]),
-            },
-        };
-        builder_fn(&mut builder);
-        builder.build()
+    pub fn with_capacity(symbols: &'a SymbolBook, capacity: [usize; 3]) -> Self {
+        Self {
+            symbols,
+            head: Vec::new(),
+            body: Equations::with_capacity(capacity[0]),
+            heap: Heap::with_capacity(capacity[1], capacity[2]),
+        }
     }
 
     // Equations --------------------------
 
-    pub fn redex(&mut self, ctr: CellPtr, fun: CellPtr) -> EquationPtr {
-        self.body.alloc(Equation::redex(ctr, fun))
-    }
-
-    pub fn reuse_redex(&mut self, ptr: EquationPtr, ctr: CellPtr, fun: CellPtr) {
-        self.body.update(ptr, Equation::redex(ctr, fun));
-    }
-
-    pub fn bind(&mut self, var: VarPtr, cell: CellPtr) -> EquationPtr {
-        self.body.alloc(Equation::bind(var, cell))
-    }
-
-    pub fn reuse_bind(&mut self, ptr: EquationPtr, var_ptr: VarPtr, cell_ptr: CellPtr) {
-        self.body.update(ptr, Equation::bind(var_ptr, cell_ptr));
-    }
-
-    pub fn connect(&mut self, left: VarPtr, right: VarPtr) -> EquationPtr {
-        self.body.alloc(Equation::connect(left, right))
-    }
-
-    pub fn reuse_connect(&mut self, ptr: EquationPtr, left_ptr: VarPtr, right_ptr: VarPtr) {
-        self.body
-            .update(ptr, Equation::connect(left_ptr, right_ptr));
+    pub fn equations<F>(&mut self, builder_fn: F)
+    where
+        F: FnOnce(&mut EquationBuilder<NetF>),
+    {
+        let mut builder = EquationBuilder::new(&self.symbols, &mut self.head, &mut self.body, &mut self.heap);
+        builder_fn(&mut builder);
+        builder.build();
     }
 
     pub fn body(&self) -> ArenaPtrIter<Equation<NetF>, EquationPtr> {
         self.body.iter()
     }
 
-    pub fn get_body<'a>(&'a self, equation: EquationPtr) -> &'a Equation<NetF> {
+    pub fn get_body(&'a self, equation: EquationPtr) -> &'a Equation<NetF> {
         self.body.get(equation).unwrap()
     }
 
@@ -204,7 +183,7 @@ impl Net {
         self.heap.cells()
     }
 
-    pub fn get_cell<'a>(&'a self, cell: CellPtr) -> &'a Cell<NetF> {
+    pub fn get_cell(&'a self, cell: CellPtr) -> &'a Cell<NetF> {
         self.heap.get_cell(cell).unwrap()
     }
 
@@ -214,7 +193,7 @@ impl Net {
         self.heap.vars()
     }
 
-    pub fn get_var<'a>(&'a self, ptr: VarPtr) -> &'a Var<NetF> {
+    pub fn get_var(&'a self, ptr: VarPtr) -> &'a Var<NetF> {
         &self.heap.get_var(ptr).unwrap()
     }
 
@@ -228,49 +207,39 @@ impl Net {
         self.heap.bvar(NetStore::default())
     }
 
-    pub fn display_head<'a>(&'a self, symbols: &'a SymbolBook) -> HeadDisplay {
-        HeadDisplay { symbols, net: self }
+    pub fn display_head(&'a self) -> HeadDisplay {
+        HeadDisplay { net: self }
     }
 
-    pub fn display_body<'a>(&'a self, symbols: &'a SymbolBook) -> EquationsDisplay<'a, NetF> {
+    pub fn display_body(&'a self) -> EquationsDisplay<'a, NetF> {
         EquationsDisplay {
-            symbols: symbols,
+            symbols: self.symbols,
             body: &self.body,
             heap: &self.heap,
         }
     }
 
-    pub fn display_equation<'a>(&'a self, symbols: &'a SymbolBook, equation: &'a Equation<NetF>) -> EquationDisplay<'a, NetF> {
+    pub fn display_equation(
+        &'a self,
+        symbols: &'a SymbolBook,
+        equation: &'a Equation<NetF>,
+    ) -> EquationDisplay<'a, NetF> {
         EquationDisplay {
             equation,
             symbols,
             heap: &self.heap,
         }
     }
-    pub fn display_net<'a>(&'a self, symbols: &'a SymbolBook) -> NetDisplay {
-        NetDisplay { symbols, net: self }
-    }
 }
 
-pub struct NetDisplay<'a> {
-    symbols: &'a SymbolBook,
-    net: &'a Net,
-}
-
-impl<'a> Display for NetDisplay<'a> {
+impl<'a> Display for Net<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "< {} | {} >",
-            self.net.display_head(self.symbols),
-            self.net.display_body(self.symbols)
-        )
+        write!(f, "< {} | {} >", self.display_head(), self.display_body())
     }
 }
 
 pub struct HeadDisplay<'a> {
-    symbols: &'a SymbolBook,
-    net: &'a Net,
+    net: &'a Net<'a>,
 }
 impl<'a> Display for HeadDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -281,7 +250,11 @@ impl<'a> Display for HeadDisplay<'a> {
                 match fvar {
                     Var::Bound(_) => unreachable!(),
                     Var::Free(store) => match store.get_cell_ptr() {
-                        Some(cell_ptr) => self.net.heap.display_cell(self.symbols, cell_ptr).fmt(f),
+                        Some(cell_ptr) => self
+                            .net
+                            .heap
+                            .display_cell(self.net.symbols, cell_ptr)
+                            .fmt(f),
                         None => write!(f, "_.{}", fvar_ptr.get_index()),
                     },
                 }

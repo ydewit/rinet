@@ -9,7 +9,7 @@ use super::{
     cell::CellPtr,
     equation::{Equation, EquationDisplay, EquationPtr, Equations},
     heap::{CellDisplay, Heap, VarDisplay},
-    symbol::{SymbolBook, SymbolPtr, SymbolArity},
+    symbol::{SymbolArity, SymbolBook, SymbolPtr},
     term::{TermFamily, TermPtr},
     var::{Var, VarPtr},
     BitSet16,
@@ -60,6 +60,12 @@ pub enum RulePort {
     Fun(PortNum),
 }
 
+impl Default for RulePort {
+    fn default() -> Self {
+        RulePort::Ctr(PortNum::Zero)
+    }
+}
+
 impl Into<Var<RuleF>> for RulePort {
     fn into(self) -> Var<RuleF> {
         Var::Free(self)
@@ -104,7 +110,7 @@ impl Debug for RulePtr {
     }
 }
 
-type RuleId = (usize, usize);
+type RuleKey = (usize, usize);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rule {
@@ -125,7 +131,7 @@ impl Rule {
         }
     }
 
-    pub fn get_id(&self) -> RuleId {
+    pub fn get_key(&self) -> RuleKey {
         (self.ctr.get_index(), self.fun.get_index())
     }
 
@@ -150,18 +156,14 @@ impl ArenaValue<RulePtr> for Rule {
 
 pub type Rules = Arena<Rule, RulePtr>;
 
-pub struct RuleBuilder<'a> {
-    ctr: SymbolPtr,
-    fun: SymbolPtr,
-    rules: &'a mut RuleBook,
+pub struct RuleBuilder<'a, 'b> {
+    rules: &'b mut RuleBook<'a>,
     rule: Rule,
 }
 
-impl<'a> RuleBuilder<'a> {
-    fn new(ctr: SymbolPtr, fun: SymbolPtr, rules: &'a mut RuleBook) -> Self {
+impl<'a, 'b> RuleBuilder<'a, 'b> {
+    fn new(ctr: SymbolPtr, fun: SymbolPtr, rules: &'b mut RuleBook<'a>) -> Self {
         Self {
-            ctr,
-            fun,
             rules,
             rule: Rule::new(ctr, fun),
         }
@@ -171,7 +173,7 @@ impl<'a> RuleBuilder<'a> {
         let rule_ptr = self.rules.rules.alloc(self.rule.clone());
         self.rules
             .rule_by_symbols
-            .insert(RuleBook::to_key(self.ctr, self.fun), rule_ptr.get_index());
+            .insert(self.rule.get_key(), rule_ptr.get_index());
         rule_ptr
     }
 
@@ -245,23 +247,25 @@ impl<'a> RuleBuilder<'a> {
 }
 
 #[derive(Debug)]
-pub struct RuleBook {
+pub struct RuleBook<'a> {
+    symbols: &'a SymbolBook,
     rules: Rules,
-    rule_by_symbols: HashMap<RuleId, usize>,
+    rule_by_symbols: HashMap<RuleKey, usize>,
     pub(crate) body: Equations<RuleF>,
     pub(crate) heap: Heap<RuleF>,
 }
 
-impl RuleBook {
-    fn to_key(left: SymbolPtr, right: SymbolPtr) -> RuleId {
+impl<'a> RuleBook<'a> {
+    fn to_key(left: SymbolPtr, right: SymbolPtr) -> RuleKey {
         (
             std::cmp::min(left.get_index(), right.get_index()),
             std::cmp::max(left.get_index(), right.get_index()),
         )
     }
 
-    pub fn new() -> Self {
+    pub fn new(symbols: &'a SymbolBook) -> Self {
         Self {
+            symbols,
             rules: Rules::new(),
             rule_by_symbols: HashMap::default(),
             body: Equations::new(),
@@ -269,12 +273,10 @@ impl RuleBook {
         }
     }
 
-    pub fn new_rule<F: FnOnce(&mut RuleBuilder)>(
-        &mut self,
-        ctr: SymbolPtr,
-        fun: SymbolPtr,
-        body: F,
-    ) -> RulePtr {
+    pub fn rule<F>(&mut self, ctr: SymbolPtr, fun: SymbolPtr, body: F) -> RulePtr
+    where
+        F: FnOnce(&mut RuleBuilder),
+    {
         // create the body
         let mut builder = RuleBuilder::new(ctr, fun, self);
         body(&mut builder);
@@ -289,126 +291,80 @@ impl RuleBook {
         }
     }
 
-    pub fn get_rule<'a>(&'a self, rule_ptr: RulePtr) -> &'a Rule {
+    pub fn get_rule(&'a self, rule_ptr: RulePtr) -> &'a Rule {
         self.rules.get(rule_ptr).unwrap()
     }
 
-    pub fn get_equation<'a>(&'a self, ptr: EquationPtr) -> &'a Equation<RuleF> {
+    pub fn get_equation(&'a self, ptr: EquationPtr) -> &'a Equation<RuleF> {
         self.body.get(ptr).unwrap()
     }
 
-    pub fn display_rules<'a>(&'a self, symbols: &'a SymbolBook) -> RulesDisplay {
-        RulesDisplay {
-            symbols,
-            rules: self,
-        }
-    }
-
-    pub fn display_rule<'a>(&'a self, symbols: &'a SymbolBook, rule_ptr: RulePtr) -> RuleDisplay {
+    pub fn display_rule(&'a self, rule_ptr: RulePtr) -> RuleDisplay {
         RuleDisplay {
             rule_ptr,
-            symbols,
             rules: self,
         }
     }
 
-    fn display_body<'a>(
-        &'a self,
-        symbols: &'a SymbolBook,
-        body: &'a [EquationPtr],
-    ) -> RuleBodyDisplay {
-        RuleBodyDisplay {
-            body,
-            symbols: symbols,
-            rules: self,
-        }
+    fn display_body(&'a self, body: &'a [EquationPtr]) -> RuleBodyDisplay {
+        RuleBodyDisplay { body, rules: self }
     }
 
-    pub fn display_cell<'a>(
-        &'a self,
-        symbols: &'a SymbolBook,
-        cell_ptr: CellPtr,
-    ) -> CellDisplay<RuleF> {
-        self.heap.display_cell(symbols, cell_ptr)
+    pub fn display_cell(&'a self, cell_ptr: CellPtr) -> CellDisplay<RuleF> {
+        self.heap.display_cell(self.symbols, cell_ptr)
     }
 
-    pub fn display_var<'a>(
-        &'a self,
-        symbols: &'a SymbolBook,
-        var_ptr: VarPtr,
-    ) -> VarDisplay<RuleF> {
-        self.heap.display_var(symbols, var_ptr)
+    pub fn display_var(&'a self, var_ptr: VarPtr) -> VarDisplay<RuleF> {
+        self.heap.display_var(self.symbols, var_ptr)
     }
 
-    pub fn display_equation<'a>(
-        &'a self,
-        symbols: &'a SymbolBook,
-        equation: &'a Equation<RuleF>,
-    ) -> EquationDisplay<RuleF> {
+    pub fn display_equation(&'a self, equation: &'a Equation<RuleF>) -> EquationDisplay<RuleF> {
         EquationDisplay {
             equation,
-            symbols,
+            symbols: self.symbols,
             heap: &self.heap,
         }
     }
 }
 
-pub struct RulesDisplay<'a> {
-    symbols: &'a SymbolBook,
-    rules: &'a RuleBook,
-}
-impl<'a> RulesDisplay<'a> {
-    fn to_rule_item(&self, rule_ptr: RulePtr) -> RuleDisplay {
-        RuleDisplay {
-            rule_ptr,
-            symbols: self.symbols,
-            rules: self.rules,
-        }
-    }
-}
-impl<'a> Display for RulesDisplay<'a> {
+impl<'a> Display for RuleBook<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.rules.rules.iter().fold(Ok(()), |result, rule_ptr| {
-            result.and_then(|_| writeln!(f, "{}", self.to_rule_item(rule_ptr)))
+        self.rules.iter().fold(Ok(()), |result, rule_ptr| {
+            result.and_then(|_| writeln!(f, "{}", self.display_rule(rule_ptr)))
         })
     }
 }
 
 pub struct RuleDisplay<'a> {
     rule_ptr: RulePtr,
-    symbols: &'a SymbolBook,
-    rules: &'a RuleBook,
+    rules: &'a RuleBook<'a>,
 }
 impl<'a> Display for RuleDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let rule = self.rules.get_rule(self.rule_ptr);
 
-        let ctr_name = self.symbols.get_name(rule.ctr);
-        let fun_name = self.symbols.get_name(rule.fun);
+        let ctr_name = self.rules.symbols.get_name(rule.ctr).unwrap();
+        let fun_name = self.rules.symbols.get_name(rule.fun).unwrap();
 
         match rule.ctr.get_arity() {
             SymbolArity::Zero => write!(f, "{}", ctr_name),
             SymbolArity::One => write!(f, "({} l₀)", ctr_name),
             SymbolArity::Two => write!(f, "({} l₀ l₁)", ctr_name),
-        }.and_then(|_|{
-            write!(f, " ⋈ ")
-        }).and_then(|_|{
-            match rule.fun.get_arity() {
-                SymbolArity::Zero => write!(f, "{}", fun_name),
-                SymbolArity::One => write!(f, "({} r₀)", fun_name),
-                SymbolArity::Two => write!(f, "({} r₀ r₁)", fun_name),
-            }}).and_then(|_|{
-                write!(f, "  ⟶  ")
-            }).and_then(|_|{
-                self.rules.display_body(self.symbols, &rule.body[..]).fmt(f)
-            })
+        }
+        .and_then(|_| write!(f, " ⋈ "))
+        .and_then(|_| match rule.fun.get_arity() {
+            SymbolArity::Zero => write!(f, "{}", fun_name),
+            SymbolArity::One => write!(f, "({} r₀)", fun_name),
+            SymbolArity::Two => write!(f, "({} r₀ r₁)", fun_name),
+        })
+        .and_then(|_| write!(f, "  ⟶  "))
+        .and_then(|_| self.rules.display_body(&rule.body[..]).fmt(f))
     }
 }
 
 pub struct RuleBodyDisplay<'a> {
     pub body: &'a [EquationPtr],
-    pub symbols: &'a SymbolBook,
-    pub rules: &'a RuleBook,
+    pub rules: &'a RuleBook<'a>,
 }
 impl<'a> Display for RuleBodyDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -417,11 +373,7 @@ impl<'a> Display for RuleBodyDisplay<'a> {
             .fold(Ok(()), |result, eqn_ptr| {
                 result.and_then(|_| {
                     let equation = self.rules.body.get(*eqn_ptr).unwrap();
-                    write!(
-                        f,
-                        ", {}",
-                        self.rules.display_equation(self.symbols, equation)
-                    )
+                    write!(f, ", {}", self.rules.display_equation(equation))
                 })
             })
             .and_then(|_| write!(f, ""))
@@ -446,8 +398,8 @@ mod tests {
     fn test_rule_add_and_get() {
         let mut rules = Rules::new();
         let mut symbols = SymbolBook::new();
-        let ctr = symbols.add_symbol0("Ctr", Polarity::Pos);
-        let fun = symbols.add_symbol0("Fun", Polarity::Neg);
+        let ctr = symbols.declare0("Ctr", Polarity::Pos);
+        let fun = symbols.declare0("Fun", Polarity::Neg);
         let rule = Rule::new(ctr, fun);
         let ptr = rules.alloc(rule.clone());
 
@@ -458,13 +410,13 @@ mod tests {
     fn test_rule_add_all() {
         let mut rules = Rules::new();
         let mut symbols = SymbolBook::new();
-        let ctr1 = symbols.add_symbol0("Ctr1", Polarity::Pos);
-        let fun1 = symbols.add_symbol0("Fun1", Polarity::Neg);
+        let ctr1 = symbols.declare0("Ctr1", Polarity::Pos);
+        let fun1 = symbols.declare0("Fun1", Polarity::Neg);
         let rule1 = Rule::new(ctr1, fun1);
         let ptr1 = rules.alloc(rule1.clone());
 
-        let ctr2 = symbols.add_symbol0("Ctr2", Polarity::Pos);
-        let fun2 = symbols.add_symbol0("Fun2", Polarity::Neg);
+        let ctr2 = symbols.declare0("Ctr2", Polarity::Pos);
+        let fun2 = symbols.declare0("Fun2", Polarity::Neg);
         let rule2 = Rule::new(ctr2, fun2);
         let ptr2 = rules.alloc(rule2.clone());
 

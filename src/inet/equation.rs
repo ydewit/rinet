@@ -10,7 +10,7 @@ use super::{
     cell::CellPtr,
     heap::Heap,
     symbol::SymbolBook,
-    term::TermFamily,
+    term::{TermFamily, TermPtr},
     var::VarPtr,
     BitSet16, BitSet64,
 };
@@ -262,7 +262,7 @@ impl<T: TermFamily> ArenaValue<EquationPtr> for Equation<T> {
     }
 }
 
-impl <T: TermFamily> From<u64> for Equation<T> {
+impl<T: TermFamily> From<u64> for Equation<T> {
     fn from(value: u64) -> Self {
         Equation(value, PhantomData)
     }
@@ -374,6 +374,82 @@ impl<'a, T: TermFamily> Display for EquationsDisplay<'a, T> {
         })
     }
 }
+
+
+
+pub struct EquationBuilder<'a, F: TermFamily> {
+    symbols: &'a SymbolBook,
+    head: &'a mut Vec<VarPtr>,
+    equations: &'a mut Equations<F>,
+    heap: &'a mut Heap<F>
+}
+impl<'a, F: TermFamily> EquationBuilder<'a, F> {
+    pub(crate) fn new(symbols: &'a SymbolBook, head: &'a mut Vec<VarPtr>, equations: &'a mut Equations<F>, heap: &'a mut Heap<F>) -> Self {
+        Self {
+            symbols,
+            head,
+            equations,
+            heap
+        }
+    }
+
+    pub fn redex(&mut self, ctr_ptr: CellPtr, fun_ptr: CellPtr) -> EquationPtr {
+        self.equations.alloc(Equation::redex(ctr_ptr, fun_ptr))
+    }
+
+    pub fn bind(&mut self, var_ptr: VarPtr, cell_ptr: CellPtr) -> EquationPtr {
+        self.equations.alloc(Equation::bind(var_ptr, cell_ptr))
+    }
+
+    pub fn connect(&mut self, left_ptr: VarPtr, right_ptr: VarPtr) -> EquationPtr {
+        self.equations.alloc(Equation::connect(left_ptr, right_ptr))
+    }
+
+    // ----------------
+
+    pub fn cell0(&mut self, symbol: &str) -> CellPtr {
+        let symbol_ptr = self.symbols.get_by_name(symbol).unwrap(); // TODO better error handling
+        self.heap.cell0(symbol_ptr)
+    }
+
+    pub fn cell1(&mut self, symbol: &str, left_port: TermPtr) -> CellPtr {
+        let symbol_ptr = self.symbols.get_by_name(symbol).unwrap(); // TODO better error handling
+        self.heap.cell1(symbol_ptr, left_port)
+    }
+
+    pub fn cell2(
+        &mut self,
+        symbol: &str,
+        left_port: TermPtr,
+        right_port: TermPtr,
+    ) -> CellPtr {
+        let symbol_ptr = self.symbols.get_by_name(symbol).unwrap(); // TODO better error handling
+        self.heap.cell2(symbol_ptr, left_port, right_port)
+    }
+
+    // -------------------
+
+    pub fn fvar(&mut self) -> VarPtr {
+        let ptr = self.heap.fvar(F::FreeStore::default());
+        self.head.push(ptr);
+        ptr
+
+
+    }
+
+    pub fn bvar(&mut self) -> VarPtr {
+        self.heap.bvar(F::BoundStore::default())
+    }
+
+    // -------------------
+
+    pub(crate) fn build(self) -> Self {
+        self
+    }
+}
+
+
+
 
 #[cfg(test)]
 mod tests {
