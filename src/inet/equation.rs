@@ -9,10 +9,10 @@ use super::{
     arena::{Arena, ArenaPtr, ArenaValue},
     cell::CellPtr,
     heap::Heap,
-    symbol::SymbolBook,
-    term::{TermFamily, TermPtr},
+    symbol::{SymbolBook, SymbolName},
+    term::{TermFamily, TermPtr, TermKind},
     var::VarPtr,
-    BitSet16, BitSet64,
+    BitSet16, BitSet64, net::NetF,
 };
 
 #[derive(Debug, PartialEq)]
@@ -377,7 +377,7 @@ impl<'a, T: TermFamily> Display for EquationsDisplay<'a, T> {
 
 
 
-pub struct EquationBuilder<'a, F: TermFamily> {
+pub struct EquationBuilder<'a, F: TermFamily = NetF> {
     symbols: &'a SymbolBook,
     head: &'a mut Vec<VarPtr>,
     equations: &'a mut Equations<F>,
@@ -394,6 +394,8 @@ impl<'a, F: TermFamily> EquationBuilder<'a, F> {
     }
 
     pub fn redex(&mut self, ctr_ptr: CellPtr, fun_ptr: CellPtr) -> EquationPtr {
+        assert!(ctr_ptr.get_polarity() == Polarity::Pos);
+        assert!(fun_ptr.get_polarity() == Polarity::Neg);
         self.equations.alloc(Equation::redex(ctr_ptr, fun_ptr))
     }
 
@@ -407,23 +409,28 @@ impl<'a, F: TermFamily> EquationBuilder<'a, F> {
 
     // ----------------
 
-    pub fn cell0(&mut self, symbol: &str) -> CellPtr {
-        let symbol_ptr = self.symbols.get_by_name(symbol).unwrap(); // TODO better error handling
+    pub fn cell0(&mut self, name: &SymbolName) -> CellPtr {
+        let symbol_ptr = self.symbols.get_by_name(name).unwrap(); // TODO better error handling
         self.heap.cell0(symbol_ptr)
     }
 
-    pub fn cell1(&mut self, symbol: &str, left_port: TermPtr) -> CellPtr {
-        let symbol_ptr = self.symbols.get_by_name(symbol).unwrap(); // TODO better error handling
+    pub fn cell1(&mut self, name: &SymbolName, left_port: TermPtr) -> CellPtr {
+        let symbol_ptr = self.symbols.get_by_name(name).unwrap(); // TODO better error handling
+        let symbol = self.symbols.get(symbol_ptr);
+        left_port.get_polarity().map(|pol| assert!(pol.is_opposite(symbol.get_left_polarity())));
         self.heap.cell1(symbol_ptr, left_port)
     }
 
     pub fn cell2(
         &mut self,
-        symbol: &str,
+        name: &SymbolName,
         left_port: TermPtr,
         right_port: TermPtr,
     ) -> CellPtr {
-        let symbol_ptr = self.symbols.get_by_name(symbol).unwrap(); // TODO better error handling
+        let symbol_ptr = self.symbols.get_by_name(name).unwrap(); // TODO better error handling
+        let symbol = self.symbols.get(symbol_ptr);
+        left_port.get_polarity().map(|pol| assert!(pol.is_opposite(symbol.get_left_polarity())));
+        right_port.get_polarity().map(|pol| assert!(pol.is_opposite(symbol.get_right_polarity())));
         self.heap.cell2(symbol_ptr, left_port, right_port)
     }
 

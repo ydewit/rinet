@@ -164,7 +164,12 @@ impl<'a> Net<'a> {
     where
         F: FnOnce(&mut EquationBuilder<NetF>),
     {
-        let mut builder = EquationBuilder::new(&self.symbols, &mut self.head, &mut self.body, &mut self.heap);
+        let mut builder = EquationBuilder::new(
+            &self.symbols,
+            &mut self.head,
+            &mut self.body,
+            &mut self.heap,
+        );
         builder_fn(&mut builder);
         builder.build();
     }
@@ -234,7 +239,7 @@ impl<'a> Net<'a> {
 
 impl<'a> Display for Net<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "< {} | {} >", self.display_head(), self.display_body())
+        write!(f, "<{} | {} >", self.display_head(), self.display_body())
     }
 }
 
@@ -250,12 +255,13 @@ impl<'a> Display for HeadDisplay<'a> {
                 match fvar {
                     Var::Bound(_) => unreachable!(),
                     Var::Free(store) => match store.get_cell_ptr() {
-                        Some(cell_ptr) => self
-                            .net
-                            .heap
-                            .display_cell(self.net.symbols, cell_ptr)
-                            .fmt(f),
-                        None => write!(f, "_.{}", fvar_ptr.get_index()),
+                        Some(cell_ptr) => write!(
+                            f,
+                            " _.{}={}",
+                            fvar_ptr.get_index(),
+                            self.net.heap.display_cell(self.net.symbols, cell_ptr)
+                        ),
+                        None => write!(f, " _.{}", fvar_ptr.get_index()),
                     },
                 }
             })

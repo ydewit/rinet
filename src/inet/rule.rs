@@ -6,10 +6,10 @@ use std::{
 
 use super::{
     arena::{Arena, ArenaPtr, ArenaValue},
-    cell::CellPtr,
+    cell::{CellPtr},
     equation::{Equation, EquationDisplay, EquationPtr, Equations},
     heap::{CellDisplay, Heap, VarDisplay},
-    symbol::{SymbolArity, SymbolBook, SymbolPtr},
+    symbol::{SymbolArity, SymbolBook, SymbolPtr, SymbolName},
     term::{TermFamily, TermPtr},
     var::{Var, VarPtr},
     BitSet16,
@@ -197,44 +197,51 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
 
     /// ------------------------------------------------
 
-    pub fn cell0(&mut self, symbol_ptr: SymbolPtr) -> CellPtr {
+    pub fn cell0(&mut self, name: &SymbolName) -> CellPtr {
+        let symbol_ptr = self.rules.symbols.get_by_name(name).unwrap();
         self.rules.heap.cell0(symbol_ptr)
     }
 
-    pub fn cell1(&mut self, symbol_ptr: SymbolPtr, port: TermPtr) -> CellPtr {
+    pub fn cell1(&mut self, name: &SymbolName, port: TermPtr) -> CellPtr {
+        let symbol_ptr = self.rules.symbols.get_by_name(name).unwrap();
         self.rules.heap.cell1(symbol_ptr, port)
     }
 
     pub fn cell2(
         &mut self,
-        symbol_ptr: SymbolPtr,
+        name: &SymbolName,
         left_port: TermPtr,
         right_port: TermPtr,
     ) -> CellPtr {
+        let symbol_ptr = self.rules.symbols.get_by_name(name).unwrap();
         self.rules.heap.cell2(symbol_ptr, left_port, right_port)
     }
 
     /// ------------------------------------------------
 
     pub fn ctr_port_0(&mut self) -> VarPtr {
+        assert!(self.rule.ctr.get_arity() == SymbolArity::One || self.rule.ctr.get_arity() == SymbolArity::Two);
         let var_ptr = self.rules.heap.fvar(RulePort::Ctr(PortNum::Zero));
         self.rule.fvar_ptrs.push(var_ptr);
         var_ptr
     }
 
     pub fn ctr_port_1(&mut self) -> VarPtr {
+        assert!(self.rule.ctr.get_arity() == SymbolArity::Two);
         let var_ptr = self.rules.heap.fvar(RulePort::Ctr(PortNum::One));
         self.rule.fvar_ptrs.push(var_ptr);
         var_ptr
     }
 
     pub fn fun_port_0(&mut self) -> VarPtr {
+        assert!(self.rule.fun.get_arity() == SymbolArity::One || self.rule.fun.get_arity() == SymbolArity::Two);
         let var_ptr = self.rules.heap.fvar(RulePort::Fun(PortNum::Zero));
         self.rule.fvar_ptrs.push(var_ptr);
         var_ptr
     }
 
     pub fn fun_port_1(&mut self) -> VarPtr {
+        assert!(self.rule.fun.get_arity() == SymbolArity::Two);
         let var_ptr = self.rules.heap.fvar(RulePort::Fun(PortNum::One));
         self.rule.fvar_ptrs.push(var_ptr);
         var_ptr
@@ -273,21 +280,24 @@ impl<'a> RuleBook<'a> {
         }
     }
 
-    pub fn rule<F>(&mut self, ctr: SymbolPtr, fun: SymbolPtr, body: F) -> RulePtr
+    pub fn rule<F>(&mut self, ctr_name: &SymbolName, fun_name: &SymbolName, body: F) -> RulePtr
     where
         F: FnOnce(&mut RuleBuilder),
     {
         // create the body
-        let mut builder = RuleBuilder::new(ctr, fun, self);
+        let ctr_ptr = self.symbols.get_by_name(ctr_name).unwrap();
+        let fun_ptr = self.symbols.get_by_name(fun_name).unwrap();
+
+        let mut builder = RuleBuilder::new(ctr_ptr, fun_ptr, self);
         body(&mut builder);
         builder.build()
     }
 
-    pub fn get_by_symbols(&self, ctr: SymbolPtr, fun: SymbolPtr) -> RulePtr {
+    pub fn get_by_symbols(&self, ctr: SymbolPtr, fun: SymbolPtr) -> Option<RulePtr> {
         let key = RuleBook::to_key(ctr, fun);
         match self.rule_by_symbols.get(&key) {
-            Some(index) => RulePtr::new(*index),
-            None => panic!("Rule not found for: {:?} >< {:?}", ctr, fun),
+            Some(index) => Some(RulePtr::new(*index)),
+            None => None
         }
     }
 
@@ -398,8 +408,8 @@ mod tests {
     fn test_rule_add_and_get() {
         let mut rules = Rules::new();
         let mut symbols = SymbolBook::new();
-        let ctr = symbols.declare0("Ctr", Polarity::Pos);
-        let fun = symbols.declare0("Fun", Polarity::Neg);
+        let ctr = symbols.ctr0(&"Ctr".into());
+        let fun = symbols.fun0(&"Fun".into());
         let rule = Rule::new(ctr, fun);
         let ptr = rules.alloc(rule.clone());
 
@@ -410,13 +420,13 @@ mod tests {
     fn test_rule_add_all() {
         let mut rules = Rules::new();
         let mut symbols = SymbolBook::new();
-        let ctr1 = symbols.declare0("Ctr1", Polarity::Pos);
-        let fun1 = symbols.declare0("Fun1", Polarity::Neg);
+        let ctr1 = symbols.ctr0(&"Ctr1".into());
+        let fun1 = symbols.fun0(&"Fun1".into());
         let rule1 = Rule::new(ctr1, fun1);
         let ptr1 = rules.alloc(rule1.clone());
 
-        let ctr2 = symbols.declare0("Ctr2", Polarity::Pos);
-        let fun2 = symbols.declare0("Fun2", Polarity::Neg);
+        let ctr2 = symbols.ctr0(&"Ctr2".into());
+        let fun2 = symbols.fun0(&"Fun2".into());
         let rule2 = Rule::new(ctr2, fun2);
         let ptr2 = rules.alloc(rule2.clone());
 

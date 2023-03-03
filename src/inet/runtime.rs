@@ -107,7 +107,9 @@ impl<'a> Runtime<'a> {
         // find rule
         let rule_ptr = self
             .rules
-            .get_by_symbols(ctr.get_symbol_ptr(), fun.get_symbol_ptr());
+            .get_by_symbols(ctr.get_symbol_ptr(), fun.get_symbol_ptr()).or_else(||{
+                panic!("Rule not found for: {} >< {}", self.symbols.get_name(ctr.get_symbol_ptr()).unwrap(), self.symbols.get_name(fun.get_symbol_ptr()).unwrap())
+            }).unwrap();
         let rule = self.rules.get_rule(rule_ptr);
 
         // println!(
@@ -221,7 +223,7 @@ impl<'a> Runtime<'a> {
         let fun_ptr = self.instantiate_cell(&mut net, bvars, ctr, fun, rule_fun_ptr);
 
         println!(
-            "Instantiate redex: {} = {}  ⟶  {} = {}",
+            "Instantiate rule redex: {} = {}  ⟶  {} = {}",
             self.rules.display_cell(rule_ctr_ptr),
             self.rules.display_cell(rule_fun_ptr),
             net.heap.display_cell(self.symbols, ctr_ptr),
@@ -245,7 +247,7 @@ impl<'a> Runtime<'a> {
         let term_ptr = self.instantiate_var(&net, bvars, ctr, fun, rule_var_ptr);
 
         print!(
-            "Instantiate bind: {} ← {}",
+            "Instantiate rule bind: {} ← {}",
             self.rules.display_var(rule_var_ptr),
             self.rules.display_cell(rule_cell_ptr)
         );
@@ -300,7 +302,7 @@ impl<'a> Runtime<'a> {
         let right_port_ptr = self.instantiate_var(&net, bvars, ctr, fun, rule_right_var);
 
         print!(
-            "Instantiate connect: {} ↔ {}",
+            "Instantiate rule connect: {} ↔ {}",
             self.rules.display_var(rule_left_var),
             self.rules.display_var(rule_right_var)
         );

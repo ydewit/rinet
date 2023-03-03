@@ -5,7 +5,7 @@ use super::{
     heap::Heap,
     symbol::SymbolBook,
     var::{Var, VarPtr},
-    BitSet32,
+    BitSet32, Polarity,
 };
 
 pub trait TermFamily: Clone {
@@ -99,6 +99,13 @@ impl TermPtr {
     pub fn get_cell_ptr(&self) -> CellPtr {
         assert!(self.get_kind() == TermKind::Cell);
         self.get_term().into()
+    }
+
+    pub fn get_polarity(&self) -> Option<Polarity> {
+        match self.get_kind() {
+            TermKind::Cell => Some(self.get_cell_ptr().get_polarity()),
+            TermKind::Var => None,
+        }
     }
 
     pub fn get_term(&self) -> u32 {

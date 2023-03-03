@@ -94,6 +94,10 @@ impl Polarity {
             Polarity::Neg => Polarity::Pos,
         }
     }
+
+    fn is_opposite(&self, pol: Polarity) -> bool {
+        self != &pol
+    }
 }
 
 pub struct BitSet64<const N: usize> {
