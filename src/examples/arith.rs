@@ -1,7 +1,7 @@
 use crate::inet::{
     cell::CellPtr,
     equation::{EquationBuilder, EquationPtr},
-    rule::RuleBook,
+    rule::{RuleBook, RuleBuilder},
     symbol::{SymbolBook, SymbolName},
     term::TermPtr,
     Polarity,
@@ -55,6 +55,25 @@ impl<'a> EquationBuilder<'a> {
         subtractor: CellPtr, // function
     ) -> EquationPtr {
         self.redex(operand1, subtractor)
+    }
+}
+
+impl<'a, 'b> RuleBuilder<'a, 'b> {
+    pub fn adder(
+        &mut self,
+        result: TermPtr,   // port 0
+        operand2: TermPtr, // port 1
+    ) -> CellPtr {
+        self.cell2(&ADD, result.into(), operand2.into())
+    }
+
+    // subtractor function
+    pub fn subtractor(
+        &mut self,
+        result: TermPtr,   // port 0
+        operand2: TermPtr, // port 1
+    ) -> CellPtr {
+        self.cell2(&SUB, result.into(), operand2.into())
     }
 }
 

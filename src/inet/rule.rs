@@ -12,7 +12,7 @@ use super::{
     symbol::{SymbolArity, SymbolBook, SymbolName, SymbolPtr},
     term::{TermFamily, TermPtr},
     var::{Var, VarPtr},
-    BitSet16,
+    BitSet16, Polarity,
 };
 
 #[derive(Debug, Clone)]
@@ -204,11 +204,26 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
 
     pub fn cell1(&mut self, name: &SymbolName, port: TermPtr) -> CellPtr {
         let symbol_ptr = self.rules.symbols.get_by_name(name).unwrap();
+        // check polarity
+        port.get_polarity().and_then(|pol| {
+            assert!(pol.is_opposite(self.rules.symbols.get(symbol_ptr).get_left_polarity()));
+            Some(pol)
+        });
         self.rules.heap.cell1(symbol_ptr, port)
     }
 
     pub fn cell2(&mut self, name: &SymbolName, left_port: TermPtr, right_port: TermPtr) -> CellPtr {
         let symbol_ptr = self.rules.symbols.get_by_name(name).unwrap();
+        // check left polarity
+        left_port.get_polarity().and_then(|pol| {
+            assert!(pol.is_opposite(self.rules.symbols.get(symbol_ptr).get_left_polarity()));
+            Some(pol)
+        });
+        // check right polarity
+        right_port.get_polarity().and_then(|pol| {
+            assert!(pol.is_opposite(self.rules.symbols.get(symbol_ptr).get_right_polarity()));
+            Some(pol)
+        });
         self.rules.heap.cell2(symbol_ptr, left_port, right_port)
     }
 

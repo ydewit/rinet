@@ -3,7 +3,7 @@ use crate::inet::{
     equation::{EquationBuilder, EquationPtr},
     rule::RuleBook,
     symbol::{SymbolBook, SymbolName},
-    Polarity,
+    Polarity, term::TermPtr,
 };
 
 use super::nat::{S, Z};
@@ -18,20 +18,20 @@ impl SymbolBook {
 
 impl<'a> EquationBuilder<'a> {
     // Cell
-    pub fn duplicator(&mut self, dup1: CellPtr, dup2: CellPtr) -> CellPtr {
-        self.cell2(&DUP, dup1.into(), dup2.into())
+    pub fn duplicator(&mut self, dup1: TermPtr, dup2: TermPtr) -> CellPtr {
+        self.cell2(&DUP, dup1, dup2)
     }
 
     // Redex
-    pub fn duplicate(&mut self, cell: CellPtr, dup1: CellPtr, dup2: CellPtr) -> EquationPtr {
-        let duplicator = self.duplicator(dup1, dup2);
+    pub fn duplicate(&mut self, cell: TermPtr, dup1: TermPtr, dup2: TermPtr) -> EquationPtr {
+        let duplicator = self.duplicator(dup1.into(), dup2.into());
         self.redex(cell.into(), duplicator.into())
     }
 }
 
 impl<'a> RuleBook<'a> {
     pub fn define_combinator_rules(&mut self) {
-        // Z >< sub
+        // Z >< dup
         self.rule(&Z, &DUP, |b| {
             let r0 = b.fun_port_0();
             let z0 = b.cell0(&Z);
@@ -42,7 +42,7 @@ impl<'a> RuleBook<'a> {
             b.bind(r1.into(), z1.into());
         });
 
-        // S >< sub
+        // S >< dup
         self.rule(&S, &DUP, |b| {
             let x0 = b.var();
             let x1 = b.var();

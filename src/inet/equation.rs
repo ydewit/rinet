@@ -131,7 +131,8 @@ pub fn order_ctr_fun(left_ptr: CellPtr, right_ptr: CellPtr) -> (CellPtr, CellPtr
     match (left_ptr.get_polarity(), right_ptr.get_polarity()) {
         (Polarity::Pos, Polarity::Neg) => (left_ptr, right_ptr),
         (Polarity::Neg, Polarity::Pos) => (right_ptr, left_ptr),
-        _ => panic!(),
+        (Polarity::Neg, Polarity::Neg) => panic!("Short-circuit (Neg x Neg)"),
+        (Polarity::Pos, Polarity::Pos) => panic!("Short-circuit (Pos x Pos)")
     }
 }
 

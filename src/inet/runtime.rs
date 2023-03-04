@@ -252,14 +252,20 @@ impl<'a> Runtime<'a> {
         let cell_ptr = self.instantiate_cell(&mut net, bvars, ctr, fun, rule_cell_ptr);
         let term_ptr = self.instantiate_var(&net, bvars, ctr, fun, rule_var_ptr);
 
-        print!(
-            "Instantiate rule bind: {} ← {}",
-            self.rules.display_var(rule_var_ptr),
-            self.rules.display_cell(rule_cell_ptr)
-        );
+        // print!(
+        //     "Instantiate rule bind: {} ← {}",
+        //     self.rules.display_var(rule_var_ptr),
+        //     self.rules.display_cell(rule_cell_ptr)
+        // );
 
         match term_ptr.get_kind() {
             TermKind::Cell => {
+                print!(
+                    "Instantiate rule bind: {} ← {}",
+                    self.rules.display_var(rule_var_ptr),
+                    self.rules.display_cell(rule_cell_ptr)
+                );
+
                 let (ctr_ptr, fun_ptr) = order_ctr_fun(cell_ptr, term_ptr.get_cell_ptr());
                 println!(
                     "  ⟶  {} = {}",
@@ -273,6 +279,12 @@ impl<'a> Runtime<'a> {
                 let var = net.get_var(term_ptr.get_var_ptr());
                 match var.get_store().get_or_set(cell_ptr) {
                     Some(other_cell_ptr) => {
+                        print!(
+                            "Instantiate rule bind: {}[{}] ← {}",
+                            self.rules.display_var(rule_var_ptr),
+                            net.heap.display_cell(self.symbols, other_cell_ptr),
+                            self.rules.display_cell(rule_cell_ptr)
+                        );
                         let (ctr_ptr, fun_ptr) = order_ctr_fun(cell_ptr, other_cell_ptr);
                         println!(
                             "  ⟶  {} = {}",

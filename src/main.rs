@@ -18,6 +18,7 @@ pub fn inet_main() {
     symbols.declare_nat_symbols();
     symbols.declare_arith_symbols();
     symbols.declare_combinator_symbols();
+    symbols.declare_fib_symbols();
 
     // // Fib
     // let fib_sym = symbols.declare1("fib", Polarity::Neg, Polarity::Pos);
@@ -31,6 +32,7 @@ pub fn inet_main() {
     // Arith rules
     rules.arith_rules();
     rules.define_combinator_rules();
+    rules.fib_rules();
 
     println!("{}", rules);
     // println!("{:?}", rules);
@@ -103,6 +105,63 @@ pub fn inet_main() {
         let two = b.two();
         b.subtract(two, subtractor);
     });
+
+    // Duplicate Z
+    net.equations(|b|{
+        let dup1 = b.fvar();
+        let dup2 = b.fvar();
+        let zero = b.zero();
+        b.duplicate(zero.into(), dup1.into(), dup2.into());
+
+    });
+
+    // Duplicate One
+    net.equations(|b|{
+        let dup1 = b.fvar();
+        let dup2 = b.fvar();
+        let one = b.one();
+        b.duplicate(one.into(), dup1.into(), dup2.into());
+    });
+
+    // Duplicate Two
+    net.equations(|b|{
+        let dup1 = b.fvar();
+        let dup2 = b.fvar();
+        let two = b.two();
+        b.duplicate(two.into(), dup1.into(), dup2.into());
+    });
+
+    // fib0
+    net.equations(|b|{
+        let result = b.fvar();
+        let zero = b.zero();
+        b.fibonacci(zero.into(), result.into());
+    });
+
+    // fib1
+    net.equations(|b|{
+        let result = b.fvar();
+        let one = b.zero();
+        b.fibonacci(one.into(), result.into());
+    });
+
+    // fib2
+    net.equations(|b|{
+        let result = b.fvar();
+        let two = b.two();
+        b.fibonacci(two.into(), result.into());
+    });
+
+    // #eval eval "fib0=0"   [ ⟨Fib (fvar 0), Z⟩ ]
+    // #eval eval "fib1=1"   [ ⟨Fib (fvar 0), (S Z)⟩ ]
+    // #eval eval "fib2=1"   [ ⟨Fib (fvar 0), (S (S Z))⟩ ]
+    // #eval eval "fib3=2"   [ ⟨Fib (fvar 0), (S (S (S Z)))⟩ ]
+    // #eval eval "fib4=3"   [ ⟨Fib (fvar 0), (S (S (S (S Z))))⟩ ]
+    // #eval eval "fib5=5"   [ ⟨Fib (fvar 0), (S (S (S (S (S Z)))))⟩ ]
+    // #eval eval "fib6=8"   [ ⟨Fib (fvar 0), (S (S (S (S (S (S Z))))))⟩ ]
+    // #eval eval "fib7=13"  [ ⟨Fib (fvar 0), (S (S (S (S (S (S (S Z)))))))⟩ ]
+    // -- #eval eval "fib8=21"  [ ⟨Fib (fvar 0), (S (S (S (S (S (S (S (S Z))))))))⟩ ]
+
 
     println!("{}", net);
 
