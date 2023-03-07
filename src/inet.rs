@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    ops::{BitAnd, BitOr, Shl, Shr},
+};
 
 pub mod arena;
 pub mod cell;
@@ -100,6 +103,49 @@ impl Polarity {
     }
 }
 
+/// ## BitField
+/// Experimental implementation of BitSet that is polymorphic
+///
+pub struct BitField<
+    T: Copy + PartialOrd + Shl<Output = T> + Shr<Output = T> + BitAnd<Output = T>,
+    const N: usize,
+> {
+    pub mask: T,
+    pub offset: T,
+}
+
+impl<
+        T: Copy
+            + PartialOrd
+            + Shl<Output = T>
+            + Shr<Output = T>
+            + BitAnd<Output = T>
+            + BitOr<Output = T>,
+        const N: usize,
+    > BitField<T, N>
+{
+    pub fn check_value(&self, value: &T) {
+        // assert!(self.mask < (1 << self.len()));
+        // assert!(value >>  (1 << self.len()));
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        N
+    }
+
+    #[inline]
+    pub fn set(&self, bits: T, value: T) -> T {
+        self.check_value(&value);
+        bits | ((value & self.mask) << self.offset)
+    }
+
+    #[inline]
+    pub fn get(&self, value: T) -> T {
+        (value >> self.offset) & self.mask
+    }
+}
+
 pub struct BitSet64<const N: usize> {
     mask: u64,
     offset: u8,
@@ -165,6 +211,11 @@ impl<const N: usize> BitSet32<N> {
     #[inline]
     pub fn get(&self, bits: u32) -> u32 {
         (bits >> self.offset) & self.mask
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        N
     }
 }
 

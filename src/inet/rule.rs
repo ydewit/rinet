@@ -1,4 +1,3 @@
-use core::panic;
 use std::{
     collections::HashMap,
     fmt::{Debug, Display, Formatter},
@@ -12,7 +11,7 @@ use super::{
     symbol::{SymbolArity, SymbolBook, SymbolName, SymbolPtr},
     term::{TermFamily, TermPtr},
     var::{Var, VarPtr},
-    BitSet16, Polarity,
+    BitSet16,
 };
 
 #[derive(Debug, Clone)]
@@ -114,17 +113,17 @@ type RuleKey = (usize, usize);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rule {
-    pub(crate) ctr: SymbolPtr,
-    pub(crate) fun: SymbolPtr,
+    pub(crate) ctr_ptr: SymbolPtr,
+    pub(crate) fun_ptr: SymbolPtr,
     fvar_ptrs: Vec<VarPtr>,
     bvar_count: u8,
     pub body: Vec<EquationPtr>,
 }
 impl Rule {
-    pub fn new(ctr: SymbolPtr, fun: SymbolPtr) -> Self {
+    pub fn new(ctr_ptr: SymbolPtr, fun_ptr: SymbolPtr) -> Self {
         Self {
-            ctr,
-            fun,
+            ctr_ptr,
+            fun_ptr,
             fvar_ptrs: Vec::new(),
             bvar_count: 0,
             body: Vec::new(),
@@ -132,7 +131,7 @@ impl Rule {
     }
 
     pub fn get_key(&self) -> RuleKey {
-        (self.ctr.get_index(), self.fun.get_index())
+        (self.ctr_ptr.get_index(), self.fun_ptr.get_index())
     }
 
     pub fn get_bvar_count(&self) -> u8 {
@@ -231,8 +230,8 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
 
     pub fn ctr_port_0(&mut self) -> VarPtr {
         assert!(
-            self.rule.ctr.get_arity() == SymbolArity::One
-                || self.rule.ctr.get_arity() == SymbolArity::Two
+            self.rule.ctr_ptr.get_arity() == SymbolArity::One
+                || self.rule.ctr_ptr.get_arity() == SymbolArity::Two
         );
         let var_ptr = self.rules.heap.fvar(RulePort::Ctr(PortNum::Zero));
         self.rule.fvar_ptrs.push(var_ptr);
@@ -240,7 +239,7 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
     }
 
     pub fn ctr_port_1(&mut self) -> VarPtr {
-        assert!(self.rule.ctr.get_arity() == SymbolArity::Two);
+        assert!(self.rule.ctr_ptr.get_arity() == SymbolArity::Two);
         let var_ptr = self.rules.heap.fvar(RulePort::Ctr(PortNum::One));
         self.rule.fvar_ptrs.push(var_ptr);
         var_ptr
@@ -248,8 +247,8 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
 
     pub fn fun_port_0(&mut self) -> VarPtr {
         assert!(
-            self.rule.fun.get_arity() == SymbolArity::One
-                || self.rule.fun.get_arity() == SymbolArity::Two
+            self.rule.fun_ptr.get_arity() == SymbolArity::One
+                || self.rule.fun_ptr.get_arity() == SymbolArity::Two
         );
         let var_ptr = self.rules.heap.fvar(RulePort::Fun(PortNum::Zero));
         self.rule.fvar_ptrs.push(var_ptr);
@@ -257,7 +256,7 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
     }
 
     pub fn fun_port_1(&mut self) -> VarPtr {
-        assert!(self.rule.fun.get_arity() == SymbolArity::Two);
+        assert!(self.rule.fun_ptr.get_arity() == SymbolArity::Two);
         let var_ptr = self.rules.heap.fvar(RulePort::Fun(PortNum::One));
         self.rule.fvar_ptrs.push(var_ptr);
         var_ptr
@@ -369,16 +368,16 @@ impl<'a> Display for RuleDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let rule = self.rules.get_rule(self.rule_ptr);
 
-        let ctr_name = self.rules.symbols.get_name(rule.ctr).unwrap();
-        let fun_name = self.rules.symbols.get_name(rule.fun).unwrap();
+        let ctr_name = self.rules.symbols.get_name(rule.ctr_ptr).unwrap();
+        let fun_name = self.rules.symbols.get_name(rule.fun_ptr).unwrap();
 
-        match rule.ctr.get_arity() {
+        match rule.ctr_ptr.get_arity() {
             SymbolArity::Zero => write!(f, "{}", ctr_name),
             SymbolArity::One => write!(f, "({} l₀)", ctr_name),
             SymbolArity::Two => write!(f, "({} l₀ l₁)", ctr_name),
         }
         .and_then(|_| write!(f, " ⋈ "))
-        .and_then(|_| match rule.fun.get_arity() {
+        .and_then(|_| match rule.fun_ptr.get_arity() {
             SymbolArity::Zero => write!(f, "{}", fun_name),
             SymbolArity::One => write!(f, "({} r₀)", fun_name),
             SymbolArity::Two => write!(f, "({} r₀ r₁)", fun_name),

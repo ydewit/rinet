@@ -1,0 +1,60 @@
+use std::marker::PhantomData;
+
+trait Polarity {}
+
+struct Pos;
+impl Polarity for Pos {}
+
+struct Neg;
+impl Polarity for Neg {}
+
+struct Cell<P: Polarity> {
+    name: String,
+    phantom: PhantomData<P>
+}
+
+fn newNeg(name: String) -> Cell<Neg>{
+    Cell { name, phantom: PhantomData}
+}
+
+fn newPos(name: String) -> Cell<Pos>{
+    Cell { name, phantom: PhantomData}
+}
+
+trait EquationPolarity {
+    type Out;
+}
+
+impl EquationPolarity for (Pos, Neg) {
+    type Out = ();
+}
+
+impl EquationPolarity for (Neg, Pos) {
+    type Out = ();
+}
+
+struct Equation<P, N> {
+    lhs: Cell<P>,
+    rhs: Cell<N>,
+}
+
+impl<P, N> Equation<P, N>
+where
+    P: Polarity + std::fmt::Debug,
+    N: Polarity + std::fmt::Debug,
+    (P, N): EquationPolarity,
+{
+    fn new(lhs: Cell<P>, rhs: Cell<N>) -> Self {
+        Self { lhs, rhs }
+    }
+}
+
+fn main(){
+    let rhs = newNeg("Left".to_owned());
+    let lhs = newNeg("Right".to_owned());
+
+
+    let eq = Equation::new(lhs, rhs);
+
+    Equation::new(lhs, rhs)
+}

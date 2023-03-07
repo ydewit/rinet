@@ -85,58 +85,6 @@ impl Var<NetF> {
     }
 }
 
-// pub struct NetBuilder<'a> {
-//     net: Net<'a>,
-// }
-// impl<'a> NetBuilder<'a> {
-//     pub fn redex(&mut self, ctr_ptr: CellPtr, fun_ptr: CellPtr) -> EquationPtr {
-//         self.net.redex(ctr_ptr, fun_ptr)
-//     }
-
-//     pub fn bind(&mut self, var_ptr: VarPtr, cell_ptr: CellPtr) -> EquationPtr {
-//         self.net.bind(var_ptr, cell_ptr)
-//     }
-
-//     pub fn connect(&mut self, left_ptr: VarPtr, right_ptr: VarPtr) -> EquationPtr {
-//         self.net.connect(left_ptr, right_ptr)
-//     }
-
-//     // ----------------
-
-//     pub fn cell0(&mut self, symbol_ptr: SymbolPtr) -> CellPtr {
-//         self.net.heap.cell0(symbol_ptr)
-//     }
-
-//     pub fn cell1(&mut self, symbol_ptr: SymbolPtr, left_port: TermPtr) -> CellPtr {
-//         self.net.heap.cell1(symbol_ptr, left_port)
-//     }
-
-//     pub fn cell2(
-//         &mut self,
-//         symbol_ptr: SymbolPtr,
-//         left_port: TermPtr,
-//         right_port: TermPtr,
-//     ) -> CellPtr {
-//         self.net.heap.cell2(symbol_ptr, left_port, right_port)
-//     }
-
-//     // -------------------
-
-//     pub fn fvar(&mut self) -> VarPtr {
-//         self.net.fvar()
-//     }
-
-//     pub fn bvar(&mut self) -> VarPtr {
-//         self.net.bvar()
-//     }
-
-//     // -------------------
-
-//     fn build(self) -> Net<'a> {
-//         self.net
-//     }
-// }
-
 #[derive(Debug)]
 pub struct Net<'a> {
     symbols: &'a SymbolBook,
