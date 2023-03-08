@@ -29,7 +29,7 @@ impl TermFamily for RuleF {
     ) -> std::fmt::Result {
         match var {
             Var::Bound(store) => {
-                write!(f, "x{}", store)
+                write!(f, "x.{}", store)
             }
             Var::Free(RulePort::Ctr(PortNum::Zero)) => {
                 write!(f, "l₀")

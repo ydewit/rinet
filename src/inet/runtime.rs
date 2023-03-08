@@ -1,4 +1,4 @@
-use crate::inet::{equation::order_ctr_fun, var::Var};
+use crate::inet::var::Var;
 
 use super::{
     cell::{Cell, CellPtr},
@@ -8,6 +8,7 @@ use super::{
     symbol::{SymbolArity, SymbolBook},
     term::{TermKind, TermPtr},
     var::VarPtr,
+    Polarity,
 };
 
 pub struct BVarPtrs {
@@ -97,8 +98,8 @@ impl<'a> Runtime<'a> {
     fn eval_redex(&mut self, mut net: Net<'a>, ctr_ptr: CellPtr, fun_ptr: CellPtr) -> Net<'a> {
         println!(
             "Evaluating REDEX: {} ⋈ {}",
-            net.heap.display_cell(self.symbols, ctr_ptr),
-            net.heap.display_cell(self.symbols, fun_ptr)
+            net.display_cell(ctr_ptr),
+            net.display_cell(fun_ptr)
         );
 
         let ctr = *net.get_cell(ctr_ptr);
@@ -117,12 +118,6 @@ impl<'a> Runtime<'a> {
             })
             .unwrap();
         let rule = self.rules.get_rule(rule_ptr);
-
-        // println!(
-        //     "Found RULE: {} >< {}",
-        //     self.symbols.get_name(rule.ctr),
-        //     self.symbols.get_name(rule.fun)
-        // );
 
         // preallocate bound vars (TODO can we allocate in consecutive indexes to simplify rewrite?)
         // let bvars = net.alloc_bvars(rule.get_bvar_count());
@@ -154,7 +149,7 @@ impl<'a> Runtime<'a> {
                     // cell communicated, free the bound var
                     net.heap.free_var(var_ptr);
                 }
-                let (ctr_ptr, fun_ptr) = order_ctr_fun(cell_ptr, other_cell_ptr);
+                let (ctr_ptr, fun_ptr) = self.order_ctr_fun(&net, cell_ptr, other_cell_ptr);
                 net.body.alloc(Equation::redex(ctr_ptr, fun_ptr));
                 net
             }
@@ -164,7 +159,7 @@ impl<'a> Runtime<'a> {
 
     fn eval_connect(
         &mut self,
-        net: Net<'a>,
+        mut net: Net<'a>,
         left_var_ptr: VarPtr,
         right_var_ptr: VarPtr,
     ) -> Net<'a> {
@@ -177,7 +172,19 @@ impl<'a> Runtime<'a> {
         let left_var = net.heap.get_var(left_var_ptr).unwrap();
         let right_var = net.heap.get_var(right_var_ptr).unwrap();
 
-        todo!()
+        match (left_var.get_store().get_cell_ptr(), right_var.get_store().get_cell_ptr()) {
+            (None, None) => todo!(),
+            (None, Some(cell_ptr)) => {
+                net.body.alloc(Equation::bind(left_var_ptr, cell_ptr));
+            },
+            (Some(cell_ptr), None) => {
+                net.body.alloc(Equation::bind(right_var_ptr, cell_ptr));
+            },
+            (Some(left_cell_ptr), Some(right_cell_ptr)) => {
+                net.body.alloc(Equation::redex(left_cell_ptr, right_cell_ptr));
+            }
+        }
+        net
     }
 
     fn rewrite_equation(
@@ -266,7 +273,8 @@ impl<'a> Runtime<'a> {
                     self.rules.display_cell(rule_cell_ptr)
                 );
 
-                let (ctr_ptr, fun_ptr) = order_ctr_fun(cell_ptr, term_ptr.get_cell_ptr());
+                let (ctr_ptr, fun_ptr) =
+                    self.order_ctr_fun(&net, cell_ptr, term_ptr.get_cell_ptr());
                 println!(
                     "  ⟶  {} = {}",
                     net.heap.display_cell(self.symbols, ctr_ptr),
@@ -285,7 +293,7 @@ impl<'a> Runtime<'a> {
                             net.heap.display_cell(self.symbols, other_cell_ptr),
                             self.rules.display_cell(rule_cell_ptr)
                         );
-                        let (ctr_ptr, fun_ptr) = order_ctr_fun(cell_ptr, other_cell_ptr);
+                        let (ctr_ptr, fun_ptr) = self.order_ctr_fun(&net, cell_ptr, other_cell_ptr);
                         println!(
                             "  ⟶  {} = {}",
                             net.heap.display_cell(self.symbols, ctr_ptr),
@@ -327,8 +335,11 @@ impl<'a> Runtime<'a> {
 
         match (left_port_ptr.get_kind(), right_port_ptr.get_kind()) {
             (TermKind::Cell, TermKind::Cell) => {
-                let (ctr_ptr, fun_ptr) =
-                    order_ctr_fun(left_port_ptr.get_cell_ptr(), right_port_ptr.get_cell_ptr());
+                let (ctr_ptr, fun_ptr) = self.order_ctr_fun(
+                    &net,
+                    left_port_ptr.get_cell_ptr(),
+                    right_port_ptr.get_cell_ptr(),
+                );
                 println!(
                     "  ⟶  {} = {}",
                     net.heap.display_cell(self.symbols, ctr_ptr),
@@ -450,6 +461,28 @@ impl<'a> Runtime<'a> {
             RulePort::Ctr(PortNum::One) => ctr.get_right_port(),
             RulePort::Fun(PortNum::Zero) => fun.get_left_port(),
             RulePort::Fun(PortNum::One) => fun.get_right_port(),
+        }
+    }
+
+    fn order_ctr_fun(
+        &self,
+        net: &Net,
+        left_ptr: CellPtr,
+        right_ptr: CellPtr,
+    ) -> (CellPtr, CellPtr) {
+        match (left_ptr.get_polarity(), right_ptr.get_polarity()) {
+            (Polarity::Pos, Polarity::Neg) => (left_ptr, right_ptr),
+            (Polarity::Neg, Polarity::Pos) => (right_ptr, left_ptr),
+            (Polarity::Neg, Polarity::Neg) => panic!(
+                "Short-circuit (Neg x Neg): {} x {}",
+                net.display_cell(left_ptr),
+                net.display_cell(right_ptr)
+            ),
+            (Polarity::Pos, Polarity::Pos) => panic!(
+                "Short-circuit (Pos x Pos): {} x {}",
+                net.display_cell(left_ptr),
+                net.display_cell(right_ptr)
+            ),
         }
     }
 }

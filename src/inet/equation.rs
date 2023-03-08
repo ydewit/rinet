@@ -127,15 +127,6 @@ impl Debug for EquationPtr {
     }
 }
 
-pub fn order_ctr_fun(left_ptr: CellPtr, right_ptr: CellPtr) -> (CellPtr, CellPtr) {
-    match (left_ptr.get_polarity(), right_ptr.get_polarity()) {
-        (Polarity::Pos, Polarity::Neg) => (left_ptr, right_ptr),
-        (Polarity::Neg, Polarity::Pos) => (right_ptr, left_ptr),
-        (Polarity::Neg, Polarity::Neg) => panic!("Short-circuit (Neg x Neg)"),
-        (Polarity::Pos, Polarity::Pos) => panic!("Short-circuit (Pos x Pos)")
-    }
-}
-
 #[derive(Clone, Copy)]
 pub struct Equation<T: TermFamily>(pub u64, PhantomData<T>);
 impl<T: TermFamily> Equation<T> {

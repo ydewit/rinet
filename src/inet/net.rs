@@ -12,7 +12,7 @@ use super::{
     equation::{
         Equation, EquationBuilder, EquationDisplay, EquationPtr, Equations, EquationsDisplay,
     },
-    heap::Heap,
+    heap::{Heap, CellDisplay},
     symbol::{SymbolBook, SymbolPtr},
     term::{TermFamily, TermPtr},
     var::{Var, VarPtr},
@@ -33,8 +33,8 @@ impl TermFamily for NetF {
     ) -> std::fmt::Result {
         match var {
             Var::Bound(store) => match store.get_cell_ptr() {
-                Some(cell_ptr) => heap.display_cell(symbols, cell_ptr).fmt(f),
-                None => write!(f, "x{}", index),
+                Some(cell_ptr) => write!(f, "x.{}[={}]", index, heap.display_cell(symbols, cell_ptr)),
+                None => write!(f, "x.{}", index),
             },
             Var::Free(_) => write!(f, "_.{}", index),
         }
@@ -182,6 +182,10 @@ impl<'a> Net<'a> {
             symbols,
             heap: &self.heap,
         }
+    }
+
+    pub fn display_cell( &'a self, cell_ptr: CellPtr) -> CellDisplay<'a, NetF> {
+        self.heap.display_cell(self.symbols, cell_ptr)
     }
 }
 

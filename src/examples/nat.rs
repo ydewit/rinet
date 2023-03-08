@@ -59,4 +59,12 @@ impl<'a> EquationBuilder<'a> {
         let one = self.one();
         self.succ(one.into())
     }
+
+    pub fn n(&mut self, num: usize) -> CellPtr {
+        let mut n = self.zero();
+        for _ in 0..num {
+            n = self.succ(n)
+        }
+        n
+    }
 }

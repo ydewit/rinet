@@ -43,93 +43,93 @@ pub fn inet_main() {
     let mut net = Net::new(&symbols);
 
     // 1 + 0 = 1
-    net.equations(|b| {
-        let one = b.one();
-        let r_fvar = b.fvar();
-        let adder = b.adder(r_fvar.into(), one.into());
+    // net.equations(|b| {
+    //     let one = b.one();
+    //     let r_fvar = b.fvar();
+    //     let adder = b.adder(r_fvar.into(), one.into());
 
-        let zero = b.zero();
-        // ATTN: cannot "share" cells!! TODO how to avoid this?
-        b.add(zero, adder);
-    });
+    //     let zero = b.zero();
+    //     // ATTN: cannot "share" cells!! TODO how to avoid this?
+    //     b.add(zero, adder);
+    // });
 
-    // 1 + 2 = 3
-    net.equations(|b| {
-        let one = b.one();
-        let r_fvar = b.fvar();
-        let adder = b.adder(r_fvar.into(), one.into());
+    // // 1 + 2 = 3
+    // net.equations(|b| {
+    //     let one = b.one();
+    //     let r_fvar = b.fvar();
+    //     let adder = b.adder(r_fvar.into(), one.into());
 
-        // ATTN: cannot "share" cells!! TODO how to avoid this?
-        let two = b.two();
-        b.add(two, adder);
-    });
+    //     // ATTN: cannot "share" cells!! TODO how to avoid this?
+    //     let two = b.two();
+    //     b.add(two, adder);
+    // });
 
-    // 2 - 1 = 1
-    net.equations(|b| {
-        let result = b.fvar();
-        let one = b.one();
-        let subtractor = b.subtractor(result.into(), one.into());
+    // // 2 - 1 = 1
+    // net.equations(|b| {
+    //     let result = b.fvar();
+    //     let one = b.one();
+    //     let subtractor = b.subtractor(result.into(), one.into());
 
-        let two = b.two();
-        b.subtract(two, subtractor);
-    });
+    //     let two = b.two();
+    //     b.subtract(two, subtractor);
+    // });
 
-    // 3 - 2 = 1
-    net.equations(|b| {
-        let result = b.fvar();
-        let two = b.two();
-        let three = b.succ(two.into());
-        let subtractor = b.subtractor(result.into(), three.into());
+    // // 3 - 2 = 1
+    // net.equations(|b| {
+    //     let result = b.fvar();
+    //     let two = b.two();
+    //     let three = b.succ(two.into());
+    //     let subtractor = b.subtractor(result.into(), three.into());
 
-        let two = b.two();
-        b.subtract(two, subtractor);
-    });
+    //     let two = b.two();
+    //     b.subtract(two, subtractor);
+    // });
 
-    // 3 - 0 = 0
-    net.equations(|b| {
-        let result = b.fvar();
-        let two = b.two();
-        let three = b.succ(two.into());
-        let subtractor = b.subtractor(result.into(), three.into());
+    // // 3 - 0 = 0
+    // net.equations(|b| {
+    //     let result = b.fvar();
+    //     let two = b.two();
+    //     let three = b.succ(two.into());
+    //     let subtractor = b.subtractor(result.into(), three.into());
 
-        let zero = b.zero();
-        b.subtract(zero, subtractor);
-    });
+    //     let zero = b.zero();
+    //     b.subtract(zero, subtractor);
+    // });
 
-    // 1 - 2 = 0
-    net.equations(|b| {
-        let result = b.fvar();
-        let one = b.two();
-        let subtractor = b.subtractor(result.into(), one.into());
+    // // 1 - 2 = 0
+    // net.equations(|b| {
+    //     let result = b.fvar();
+    //     let one = b.two();
+    //     let subtractor = b.subtractor(result.into(), one.into());
 
-        let two = b.two();
-        b.subtract(two, subtractor);
-    });
+    //     let two = b.two();
+    //     b.subtract(two, subtractor);
+    // });
 
-    // Duplicate Z
-    net.equations(|b|{
-        let dup1 = b.fvar();
-        let dup2 = b.fvar();
-        let zero = b.zero();
-        b.duplicate(zero.into(), dup1.into(), dup2.into());
+    // // Duplicate Z
+    // net.equations(|b|{
+    //     let dup1 = b.fvar();
+    //     let dup2 = b.fvar();
+    //     let zero = b.zero();
+    //     b.duplicate(zero.into(), dup1.into(), dup2.into());
 
-    });
+    // });
 
-    // Duplicate One
-    net.equations(|b|{
-        let dup1 = b.fvar();
-        let dup2 = b.fvar();
-        let one = b.one();
-        b.duplicate(one.into(), dup1.into(), dup2.into());
-    });
+    // // Duplicate One
+    // net.equations(|b|{
+    //     let dup1 = b.fvar();
+    //     let dup2 = b.fvar();
+    //     let one = b.one();
+    //     b.duplicate(one.into(), dup1.into(), dup2.into());
+    // });
 
-    // Duplicate Two
-    net.equations(|b|{
-        let dup1 = b.fvar();
-        let dup2 = b.fvar();
-        let two = b.two();
-        b.duplicate(two.into(), dup1.into(), dup2.into());
-    });
+    // // Duplicate Two
+    // net.equations(|b|{
+    //     let dup1 = b.fvar();
+    //     let dup2 = b.fvar();
+    //     let two = b.two();
+    //     b.duplicate(two.into(), dup1.into(), dup2.into());
+    // });
 
     // fib0
     net.equations(|b|{
@@ -149,6 +149,20 @@ pub fn inet_main() {
     net.equations(|b|{
         let result = b.fvar();
         let two = b.two();
+        b.fibonacci(two.into(), result.into());
+    });
+
+    // fib3
+    net.equations(|b|{
+        let result = b.fvar();
+        let two = b.n(3);
+        b.fibonacci(two.into(), result.into());
+    });
+
+    // fib5
+    net.equations(|b|{
+        let result = b.fvar();
+        let two = b.n(5);
         b.fibonacci(two.into(), result.into());
     });
 

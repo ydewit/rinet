@@ -95,7 +95,7 @@ impl<'a> RuleBook<'a> {
 
             // ⟨ .cell ⟨"add", #[.var (.bvar 3), .var (.fvar (.inl 0))]⟩, .var (.bvar 2)⟩
             let r0 = b.fun_port_0();
-            let adder = b.adder(x3.into(), r0.into());
+            let adder = b.adder(r0.into(), x3.into());
             b.bind(x2.into(), adder.into());
         });
     }
