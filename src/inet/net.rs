@@ -33,7 +33,8 @@ impl TermFamily for NetF {
     ) -> std::fmt::Result {
         match var {
             Var::Bound(store) => match store.get_cell_ptr() {
-                Some(cell_ptr) => write!(f, "x.{}[={}]", index, heap.display_cell(symbols, cell_ptr)),
+                // Some(cell_ptr) => write!(f, "x.{}[={}]", index, heap.display_cell(symbols, cell_ptr)),
+                Some(cell_ptr) => write!(f, "x.{}", index),
                 None => write!(f, "x.{}", index),
             },
             Var::Free(_) => write!(f, "_.{}", index),

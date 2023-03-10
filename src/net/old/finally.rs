@@ -193,7 +193,7 @@ impl Symbol for Id<CompactSymbolPtr> {
 //         }
 
 //         fn connect(&mut self, left: &Self::Var, right: &Self::Var) {
-//             format!("{left} <-> {right}");
+//             format!("{left} ↔ {right}");
 //         }
 //     }
 

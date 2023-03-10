@@ -131,26 +131,26 @@ pub fn inet_main() {
     //     b.duplicate(two.into(), dup1.into(), dup2.into());
     // });
 
-    // fib0
-    net.equations(|b|{
-        let result = b.fvar();
-        let zero = b.zero();
-        b.fibonacci(zero.into(), result.into());
-    });
+    // // fib0
+    // net.equations(|b|{
+    //     let result = b.fvar();
+    //     let zero = b.zero();
+    //     b.fibonacci(zero.into(), result.into());
+    // });
 
-    // fib1
-    net.equations(|b|{
-        let result = b.fvar();
-        let one = b.zero();
-        b.fibonacci(one.into(), result.into());
-    });
+    // // fib1
+    // net.equations(|b|{
+    //     let result = b.fvar();
+    //     let one = b.zero();
+    //     b.fibonacci(one.into(), result.into());
+    // });
 
-    // fib2
-    net.equations(|b|{
-        let result = b.fvar();
-        let two = b.two();
-        b.fibonacci(two.into(), result.into());
-    });
+    // // fib2
+    // net.equations(|b|{
+    //     let result = b.fvar();
+    //     let two = b.two();
+    //     b.fibonacci(two.into(), result.into());
+    // });
 
     // fib3
     net.equations(|b|{
@@ -159,12 +159,12 @@ pub fn inet_main() {
         b.fibonacci(two.into(), result.into());
     });
 
-    // fib5
-    net.equations(|b|{
-        let result = b.fvar();
-        let two = b.n(5);
-        b.fibonacci(two.into(), result.into());
-    });
+    // // fib5
+    // net.equations(|b|{
+    //     let result = b.fvar();
+    //     let two = b.n(5);
+    //     b.fibonacci(two.into(), result.into());
+    // });
 
     // #eval eval "fib0=0"   [ ⟨Fib (fvar 0), Z⟩ ]
     // #eval eval "fib1=1"   [ ⟨Fib (fvar 0), (S Z)⟩ ]

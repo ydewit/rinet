@@ -164,7 +164,7 @@ impl<'a> Runtime<'a> {
         right_var_ptr: VarPtr,
     ) -> Net<'a> {
         println!(
-            "Evaluating CONNECT: {} <-> {}",
+            "Evaluating CONNECT: {} ↔ {}",
             net.heap.display_var(self.symbols, left_var_ptr),
             net.heap.display_var(self.symbols, right_var_ptr)
         );
