@@ -1,26 +1,138 @@
-use core::panic;
 use std::fmt::{Binary, Debug, Formatter};
 
 use super::{
     arena::{Arena, ArenaPtr, ArenaValue},
-    term::{TermFamily, TermKind, TermPtr},
-    BitSet32,
+    term::TermFamily,
+    BitSet32, Polarity,
 };
+
+#[derive(Debug)]
+pub struct PVarPtr(u32);
+impl PVarPtr {
+    const POLARITY: BitSet32<1> = BitSet32 {
+        mask: 0b00000000_1,
+        offset: 23,
+    };
+
+    const VAR_PTR: BitSet32<23> = BitSet32 {
+        mask: 0b00000000_01111111_11111111_11111111,
+        offset: 0,
+    };
+
+    const PTR: BitSet32<24> = BitSet32 {
+        mask: 0b00000000_11111111_11111111_11111111,
+        offset: 0,
+    };
+
+    fn new(var_ptr: VarPtr, polarity: Polarity) -> PVarPtr {
+        let mut pvar_ptr = Self(var_ptr.get_ptr());
+        pvar_ptr.set_polarity(polarity);
+        pvar_ptr
+    }
+
+    pub fn wire(var_ptr: VarPtr) -> (PVarPtr, PVarPtr) {
+        let in_ptr = Self::new(var_ptr, Polarity::Neg);
+        let out_ptr = Self::new(var_ptr, Polarity::Pos);
+        (in_ptr, out_ptr)
+    }
+
+    pub fn get_polarity(&self) -> Polarity {
+        Polarity::from(Self::POLARITY.get(self.0))
+    }
+
+    fn set_polarity(&mut self, polarity: Polarity) {
+        self.0 = Self::POLARITY.set(self.0, polarity as u32)
+    }
+
+    pub fn get_fvar_ptr(&self) -> VarPtr {
+        VarPtr(Self::VAR_PTR.get(self.0))
+    }
+
+    pub fn get_ptr(&self) -> u32 {
+        Self::PTR.get(self.0)
+    }
+}
+
+impl Into<VarPtr> for PVarPtr {
+    fn into(self) -> VarPtr {
+        self.get_fvar_ptr()
+    }
+}
+
+impl Into<VarPtr> for &PVarPtr {
+    fn into(self) -> VarPtr {
+        self.get_fvar_ptr()
+    }
+}
+
+impl From<u32> for PVarPtr {
+    fn from(value: u32) -> Self {
+        PVarPtr(value)
+    }
+}
+
+/// # PVarPtrBuffer
+///
+
+pub struct PVarPtrBuffer {
+    buffer: [VarPtr; Self::MAX_BUFFER_LEN],
+    len: u8,
+}
+
+impl PVarPtrBuffer {
+    const MAX_BUFFER_LEN: usize = 10;
+
+    pub fn new(len: u8) -> Self {
+        assert!(Self::MAX_BUFFER_LEN > len as usize);
+        Self {
+            len,
+            buffer: [
+                VarPtr(0),
+                VarPtr(0),
+                VarPtr(0),
+                VarPtr(0),
+                VarPtr(0),
+                VarPtr(0),
+                VarPtr(0),
+                VarPtr(0),
+                VarPtr(0),
+                VarPtr(0),
+            ],
+        }
+    }
+
+    pub fn set(&mut self, index: u8, var_ptr: VarPtr) {
+        assert!(index < self.len);
+        self.buffer[index as usize] = var_ptr;
+    }
+
+    pub fn get_neg_var(&self, index: u8) -> PVarPtr {
+        assert!(index < self.len);
+        PVarPtr::new(self.buffer[index as usize], Polarity::Neg)
+    }
+
+    pub fn get_pos_var(&self, index: u8) -> PVarPtr {
+        assert!(index < self.len);
+        PVarPtr::new(self.buffer[index as usize], Polarity::Pos)
+    }
+}
+
+/// # VarPtr
 
 #[derive(Clone, Copy, PartialEq)]
 pub struct VarPtr(u32);
 impl VarPtr {
     const INDEX: BitSet32<23> = BitSet32 {
-        mask: 0b00000000_11111111_11111111_11111111,
+        mask: 0b00000000_01111111_11111111_11111111,
         offset: 0,
     };
-    const _UNUSED: BitSet32<8> = BitSet32 {
-        mask: 0b11111111,
-        offset: 24,
+    const _UNUSED: BitSet32<1> = BitSet32 {
+        mask: 0b11111111_1,
+        offset: 23,
     };
 
-    const PTR: BitSet32<24> = BitSet32 {
-        mask: 0b00000000_11111111_11111111_11111111,
+    const PTR: BitSet32<23> = BitSet32 {
+        mask: 0b00000000_01111111_11111111_11111111,
         offset: 0,
     };
 
@@ -41,6 +153,7 @@ impl VarPtr {
         Self::INDEX.get(self.0) as usize
     }
 
+    #[inline]
     fn set_index(&mut self, index: usize) {
         self.0 = Self::INDEX.set(self.0, index as u32)
     }
@@ -67,24 +180,9 @@ impl Binary for VarPtr {
     }
 }
 
-impl Into<TermPtr> for VarPtr {
-    fn into(self) -> TermPtr {
-        TermPtr::new_var(self)
-    }
-}
-
 impl From<u32> for VarPtr {
     fn from(raw: u32) -> Self {
         Self(raw)
-    }
-}
-
-impl From<TermPtr> for VarPtr {
-    fn from(value: TermPtr) -> Self {
-        match value.get_kind() {
-            TermKind::Var => VarPtr(value.get_ptr()),
-            _ => panic!(),
-        }
     }
 }
 
@@ -117,13 +215,6 @@ impl<T: TermFamily> Var<T> {
         }
     }
 
-    // pub fn get_store(&self) -> &T::Store {
-    //     match self {
-    //         Var::Bound(store) => store,
-    //         Var::Free(store) => store,
-    //     }
-    // }
-
     pub fn to_ptr(&self, index: usize) -> VarPtr {
         VarPtr::new(index)
     }
@@ -135,7 +226,7 @@ impl<T: TermFamily> ArenaValue<VarPtr> for Var<T> {
     }
 }
 
-pub type Vars<T: TermFamily> = Arena<Var<T>, VarPtr>;
+pub type Vars<T> = Arena<Var<T>, VarPtr>;
 
 #[cfg(test)]
 mod tests {

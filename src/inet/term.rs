@@ -4,7 +4,7 @@ use super::{
     cell::CellPtr,
     heap::Heap,
     symbol::SymbolBook,
-    var::{Var, VarPtr},
+    var::{PVarPtr, Var},
     BitSet32, Polarity,
 };
 
@@ -69,7 +69,7 @@ impl TermPtr {
         offset: 0,
     };
 
-    pub fn new_var(var_ptr: VarPtr) -> Self {
+    pub fn new_var(var_ptr: PVarPtr) -> Self {
         let mut this = Self(0);
         this.set_kind(TermKind::Var);
         this.set_term(var_ptr.get_ptr());
@@ -91,7 +91,7 @@ impl TermPtr {
         TermKind::from(Self::KIND.get(self.0))
     }
 
-    pub fn get_var_ptr(&self) -> VarPtr {
+    pub fn get_var_ptr(&self) -> PVarPtr {
         assert!(self.get_kind() == TermKind::Var);
         self.get_term().into()
     }
@@ -101,10 +101,10 @@ impl TermPtr {
         self.get_term().into()
     }
 
-    pub fn get_polarity(&self) -> Option<Polarity> {
+    pub fn get_polarity(&self) -> Polarity {
         match self.get_kind() {
-            TermKind::Cell => Some(self.get_cell_ptr().get_polarity()),
-            TermKind::Var => None,
+            TermKind::Cell => self.get_cell_ptr().get_polarity(),
+            TermKind::Var => self.get_var_ptr().get_polarity(),
         }
     }
 
@@ -146,6 +146,32 @@ impl From<u32> for TermPtr {
         Self(value)
     }
 }
+
+impl From<PVarPtr> for TermPtr {
+    fn from(value: PVarPtr) -> Self {
+        TermPtr::new_var(value)
+    }
+}
+
+// impl From<VarPtr> for TermPtr {
+//     fn from(value: VarPtr) -> Self {
+//         TermPtr::new_var()
+//     }
+// }
+// impl Into<TermPtr> for VarPtr {
+//     fn into(self) -> TermPtr {
+//         TermPtr::new_var(self)
+//     }
+// }
+
+// impl From<TermPtr> for VarPtr {
+//     fn from(value: TermPtr) -> Self {
+//         match value.get_kind() {
+//             TermKind::Var => VarPtr(value.get_ptr()),
+//             _ => panic!(),
+//         }
+//     }
+// }
 
 impl Debug for TermPtr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

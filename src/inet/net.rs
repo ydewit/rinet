@@ -1,9 +1,6 @@
 use std::{
     fmt::Display,
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use super::{
@@ -12,10 +9,10 @@ use super::{
     equation::{
         Equation, EquationBuilder, EquationDisplay, EquationPtr, Equations, EquationsDisplay,
     },
-    heap::{Heap, CellDisplay},
-    symbol::{SymbolBook, SymbolPtr},
-    term::{TermFamily, TermPtr},
-    var::{Var, VarPtr},
+    heap::{CellDisplay, Heap},
+    symbol::SymbolBook,
+    term::TermFamily,
+    var::{PVarPtr, Var, VarPtr},
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -34,6 +31,7 @@ impl TermFamily for NetF {
         match var {
             Var::Bound(store) => match store.get_cell_ptr() {
                 // Some(cell_ptr) => write!(f, "x.{}[={}]", index, heap.display_cell(symbols, cell_ptr)),
+                // Some(cell_ptr) => write!(f, "{}", heap.display_cell(symbols, cell_ptr)),
                 Some(cell_ptr) => write!(f, "x.{}", index),
                 None => write!(f, "x.{}", index),
             },
@@ -58,14 +56,18 @@ impl NetStore {
     }
 
     pub fn get_or_set(&self, cell_ptr: CellPtr) -> Option<CellPtr> {
-        let old_value = self.0.swap(cell_ptr.get_ptr(), Ordering::Acquire);
+        let old_value = self.0.swap(cell_ptr.get_ptr(), Ordering::SeqCst);
         if old_value != Self::NULL {
             if old_value != cell_ptr.get_ptr() {
-                return Some(CellPtr::from(old_value));
+                let old_cell_ptr = Some(CellPtr::from(old_value));
+                // println!("Swapping var value {:?} with {:?}", old_cell_ptr, self.get_cell_ptr());
+                old_cell_ptr
             } else {
+                println!("WARN: Setting var with value {:?} twice?", self.get_cell_ptr());
                 return None;
             }
         } else {
+            // println!("Setting var with value {:?}", self.get_cell_ptr());
             return None;
         }
     }
@@ -89,7 +91,7 @@ impl Var<NetF> {
 #[derive(Debug)]
 pub struct Net<'a> {
     symbols: &'a SymbolBook,
-    pub head: Vec<VarPtr>,
+    pub head: Vec<PVarPtr>,
     pub body: Equations<NetF>,
     pub heap: Heap<NetF>,
 }
@@ -147,14 +149,27 @@ impl<'a> Net<'a> {
         self.heap.vars()
     }
 
-    pub fn get_var(&'a self, ptr: VarPtr) -> &'a Var<NetF> {
-        &self.heap.get_var(ptr).unwrap()
+    pub fn get_var(&'a self, ptr: &PVarPtr) -> &'a Var<NetF> {
+        &self.heap.get_var(ptr.into()).unwrap()
     }
 
-    pub fn fvar(&mut self) -> VarPtr {
-        let ptr = self.heap.fvar(NetStore::default());
-        self.head.push(ptr);
-        ptr
+    pub fn input_fvar(&mut self) -> PVarPtr {
+        let fvar_ptr = self.heap.fvar(NetStore::default());
+        let (input_ptr, output_ptr) = PVarPtr::wire(fvar_ptr);
+        self.head.push(output_ptr);
+        input_ptr
+    }
+
+    pub fn output_fvar(&mut self) -> PVarPtr {
+        let fvar_ptr = self.heap.fvar(NetStore::default());
+        let (input_ptr, output_ptr) = PVarPtr::wire(fvar_ptr);
+        self.head.push(input_ptr);
+        output_ptr
+    }
+
+    pub fn wire(&mut self) -> (PVarPtr, PVarPtr) {
+        let bvar_ptr = self.heap.bvar(NetStore::default());
+        PVarPtr::wire(self.bvar())
     }
 
     pub fn bvar(&mut self) -> VarPtr {
@@ -185,7 +200,7 @@ impl<'a> Net<'a> {
         }
     }
 
-    pub fn display_cell( &'a self, cell_ptr: CellPtr) -> CellDisplay<'a, NetF> {
+    pub fn display_cell(&'a self, cell_ptr: CellPtr) -> CellDisplay<'a, NetF> {
         self.heap.display_cell(self.symbols, cell_ptr)
     }
 }
@@ -203,7 +218,7 @@ impl<'a> Display for HeadDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.net.head.iter().fold(Ok(()), |result, fvar_ptr| {
             result.and_then(|_| {
-                let fvar = self.net.get_var(*fvar_ptr);
+                let fvar = self.net.get_var(&fvar_ptr);
                 assert!(fvar.is_free());
                 match fvar {
                     Var::Bound(_) => unreachable!(),
@@ -211,45 +226,13 @@ impl<'a> Display for HeadDisplay<'a> {
                         Some(cell_ptr) => write!(
                             f,
                             " _.{}={}",
-                            fvar_ptr.get_index(),
+                            fvar_ptr.get_fvar_ptr().get_index(),
                             self.net.heap.display_cell(self.net.symbols, cell_ptr)
                         ),
-                        None => write!(f, " _.{}", fvar_ptr.get_index()),
+                        None => write!(f, " _.{}", fvar_ptr.get_fvar_ptr().get_index()),
                     },
                 }
             })
         })
     }
-}
-
-pub trait NetVisitor<T: TermFamily> {
-    fn visit_redex(&mut self, eqn_ptr: EquationPtr, ctr: CellPtr, fun: CellPtr) -> bool {
-        true
-    }
-
-    fn visit_bind(&mut self, eqn_ptr: EquationPtr, var: VarPtr, cell: CellPtr) -> bool {
-        true
-    }
-
-    fn visit_connect(&mut self, eqn_ptr: EquationPtr, left: VarPtr, right: VarPtr) -> bool {
-        true
-    }
-
-    fn visit_cell0(&mut self, cell_ptr: CellPtr, sym_ptr: SymbolPtr) {}
-
-    fn visit_cell1(&mut self, cell_ptr: CellPtr, sym_ptr: SymbolPtr, port: TermPtr) -> bool {
-        true
-    }
-
-    fn visit_cell2(
-        &mut self,
-        cell_ptr: CellPtr,
-        sym_ptr: SymbolPtr,
-        left: TermPtr,
-        right: TermPtr,
-    ) -> bool {
-        true
-    }
-
-    fn visit_var(&mut self, var_ptr: VarPtr, fvar: &Var<T>) {}
 }

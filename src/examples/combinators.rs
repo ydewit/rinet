@@ -3,7 +3,8 @@ use crate::inet::{
     equation::{EquationBuilder, EquationPtr},
     rule::RuleBook,
     symbol::{SymbolBook, SymbolName},
-    Polarity, term::TermPtr,
+    term::TermPtr,
+    Polarity,
 };
 
 use super::nat::{S, Z};
@@ -44,19 +45,19 @@ impl<'a> RuleBook<'a> {
 
         // S >< dup
         self.rule(&S, &DUP, |b| {
-            let x0 = b.var();
-            let x1 = b.var();
+            let (x0_input, x0_output) = b.var();
+            let (x1_input, x1_output) = b.var();
 
             let l0 = b.ctr_port_0();
-            let dup = b.cell2(&DUP, x0.into(), x1.into());
+            let dup = b.cell2(&DUP, x0_input.into(), x1_input.into());
             b.bind(l0.into(), dup.into());
 
             let r0 = b.fun_port_0();
-            let s0 = b.cell1(&S, x0.into());
+            let s0 = b.cell1(&S, x0_output.into());
             b.bind(r0.into(), s0.into());
 
             let r1 = b.fun_port_1();
-            let s1 = b.cell1(&S, x1.into());
+            let s1 = b.cell1(&S, x1_output.into());
             b.bind(r1.into(), s1.into());
         });
     }

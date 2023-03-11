@@ -84,22 +84,24 @@ impl<'a> RuleBook<'a> {
     }
 
     pub fn arith_add_rules(&mut self) {
-        // add(x₁ x₂)=Z  ⟶  x₁ = x₂
+        // (add x₁ x₂)=Z  ⟶  x₁ = x₂
         self.rule(&Z, &ADD, |b| {
             let add0 = b.fun_port_0();
             let add1 = b.fun_port_1();
+            println!("{} >< {}", add0.get_polarity(), add1.get_polarity());
             b.connect(add0.into(), add1.into());
         });
 
-        // add(x₁ x₂)=Z  ⟶  x₁ = x₂
+        // (add x₁ x₂)=(S n)  ⟶  (add X x₂) >< n
         self.rule(&S, &ADD, |b| {
-            let x = b.var();
+            let (neg_pvar, pos_pvar) = b.var();
             let fun_0 = b.fun_port_0();
-            let S_x = b.cell1(&S, x.into());
+            let S_x = b.cell1(&S, pos_pvar.into());
             b.bind(fun_0.into(), S_x);
 
             let fun_1 = b.fun_port_1();
-            let add = b.cell2(&ADD, x.into(), fun_1.into());
+            println!("--> {}", fun_1.get_polarity());
+            let add = b.cell2(&ADD, neg_pvar.into(), fun_1.into());
 
             let s_port_0 = b.ctr_port_0();
             b.bind(s_port_0.into(), add);

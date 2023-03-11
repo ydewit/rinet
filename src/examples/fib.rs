@@ -75,28 +75,28 @@ impl<'a> RuleBook<'a> {
 
         // (S l₀) >< (fib₀ r₀)  ⟶  x₀ ← (fib₀ x₂); x₁ ← (fib x₃); l₀ ← (dup x₀ x₁); x₂ ← (add x₃ r₀)
         self.rule(&S, &FIB_0, |b| {
-            let x0 = b.var();
-            let x1 = b.var();
-            let x2 = b.var();
-            let x3 = b.var();
+            let (x0_in, x0_out) = b.var();
+            let (x1_in, x1_out) = b.var();
+            let (x2_in, x2_out) = b.var();
+            let (x3_in, x3_out) = b.var();
 
             // ⟨ .cell ⟨"fib₀", #[.var (.bvar 2)]⟩, .var (.bvar 0) ⟩
-            let fib0 = b.fib0(x2.into());
-            b.bind(x0.into(), fib0.into());
+            let fib0 = b.fib0(x2_in.into());
+            b.bind(x0_out.into(), fib0.into());
 
             // ⟨ .cell ⟨"fib", #[.var (.bvar 3)]⟩, .var (.bvar 1) ⟩
-            let fib = b.fib(x3.into());
-            b.bind(x1.into(), fib.into());
+            let fib = b.fib(x3_in.into());
+            b.bind(x1_out.into(), fib.into());
 
             // ⟨ .cell ⟨"dup", #[.var (.bvar 0), .var (.bvar 1)]⟩, .var (.fvar (.inr 0)) ⟩
             let l0 = b.ctr_port_0();
-            let dup = b.cell2(&DUP, x0.into(), x1.into());
+            let dup = b.cell2(&DUP, x0_in.into(), x1_in.into());
             b.bind(l0.into(), dup.into());
 
             // ⟨ .cell ⟨"add", #[.var (.bvar 3), .var (.fvar (.inl 0))]⟩, .var (.bvar 2)⟩
             let r0 = b.fun_port_0();
-            let adder = b.adder(r0.into(), x3.into());
-            b.bind(x2.into(), adder.into());
+            let adder = b.adder(r0.into(), x3_out.into());
+            b.bind(x2_out.into(), adder.into());
         });
     }
 }

@@ -11,9 +11,9 @@ use super::{
     heap::Heap,
     net::NetF,
     symbol::{SymbolBook, SymbolName},
-    term::{TermFamily, TermKind, TermPtr},
-    var::VarPtr,
-    BitSet16, BitSet64,
+    term::{TermFamily, TermPtr},
+    var::PVarPtr,
+    BitSet64, BitSet32,
 };
 
 #[derive(Debug, PartialEq)]
@@ -51,6 +51,20 @@ impl From<u16> for EquationKind {
     }
 }
 
+impl From<u32> for EquationKind {
+    fn from(value: u32) -> Self {
+        if value == 0 {
+            EquationKind::Redex
+        } else if value == 1 {
+            EquationKind::Bind
+        } else if value == 2 {
+            EquationKind::Connect
+        } else {
+            panic!()
+        }
+    }
+}
+
 impl From<u64> for EquationKind {
     fn from(value: u64) -> Self {
         if value == 0 {
@@ -66,15 +80,15 @@ impl From<u64> for EquationKind {
 }
 
 #[derive(PartialEq, Clone, Copy)]
-pub struct EquationPtr(u16);
+pub struct EquationPtr(u32);
 impl EquationPtr {
-    const INDEX: BitSet16<14> = BitSet16 {
-        mask: 0b00111111_11111111,
+    const INDEX: BitSet32<30> = BitSet32 {
+        mask: 0b00111111_11111111_11111111_11111111,
         offset: 0,
     };
-    const KIND: BitSet16<2> = BitSet16 {
+    const KIND: BitSet32<2> = BitSet32 {
         mask: 0b11,
-        offset: 14,
+        offset: 30,
     };
 
     pub fn new(index: usize, kind: EquationKind) -> Self {
@@ -91,7 +105,7 @@ impl EquationPtr {
 
     #[inline]
     fn set_kind(&mut self, kind: EquationKind) {
-        self.0 |= Self::KIND.set(self.0, kind as u16)
+        self.0 |= Self::KIND.set(self.0, kind as u32)
     }
 
     #[inline]
@@ -100,8 +114,8 @@ impl EquationPtr {
     }
 
     fn set_index(&mut self, index: usize) {
-        assert!(index < (u16::MAX - Self::KIND.mask as u16) as usize);
-        self.0 |= Self::INDEX.set(self.0, index as u16)
+        assert!(index < (u32::MAX - Self::KIND.mask as u32) as usize);
+        self.0 |= Self::INDEX.set(self.0, index as u32)
     }
 }
 
@@ -146,38 +160,26 @@ impl<T: TermFamily> Equation<T> {
     pub fn redex(left: CellPtr, right: CellPtr) -> Self {
         assert!(left.get_polarity() == Polarity::Pos && right.get_polarity() == Polarity::Neg);
         let mut eqn = Equation(0, PhantomData);
-        eqn.reuse_redex(left, right);
+        eqn.set_kind(EquationKind::Redex);
+        eqn.set_left(left.get_ptr());
+        eqn.set_right(right.get_ptr());
         eqn
     }
 
-    pub fn bind(var: VarPtr, cell: CellPtr) -> Self {
+    pub fn bind(var: PVarPtr, cell: CellPtr) -> Self {
         let mut eqn = Equation(0, PhantomData);
-        eqn.reuse_bind(var, cell);
+        eqn.set_kind(EquationKind::Bind);
+        eqn.set_left(var.get_ptr());
+        eqn.set_right(cell.get_ptr());
         eqn
     }
 
-    pub fn connect(left: VarPtr, right: VarPtr) -> Self {
+    pub fn connect(left: PVarPtr, right: PVarPtr) -> Self {
         let mut eqn = Equation(0, PhantomData);
-        eqn.reuse_connect(left, right);
+        eqn.set_kind(EquationKind::Connect);
+        eqn.set_left(left.get_ptr());
+        eqn.set_right(right.get_ptr());
         eqn
-    }
-
-    pub fn reuse_redex(&mut self, left: CellPtr, right: CellPtr) {
-        self.set_kind(EquationKind::Redex);
-        self.set_left(left.get_ptr());
-        self.set_right(right.get_ptr());
-    }
-
-    pub fn reuse_bind(&mut self, var: VarPtr, cell: CellPtr) {
-        self.set_kind(EquationKind::Bind);
-        self.set_left(var.get_ptr());
-        self.set_right(cell.get_ptr());
-    }
-
-    pub fn reuse_connect(&mut self, left: VarPtr, right: VarPtr) {
-        self.set_kind(EquationKind::Connect);
-        self.set_left(left.get_ptr());
-        self.set_right(right.get_ptr());
     }
 
     #[inline]
@@ -228,24 +230,27 @@ impl<T: TermFamily> Equation<T> {
     }
 
     #[inline]
-    pub fn get_bind_var(&self) -> VarPtr {
+    pub fn get_bind_var(&self) -> PVarPtr {
         assert!(self.get_kind() == EquationKind::Bind);
-        VarPtr::from(self.get_left())
+        PVarPtr::from(self.get_left())
     }
 
     #[inline]
     pub fn get_bind_cell(&self) -> CellPtr {
+        assert!(self.get_kind() == EquationKind::Bind);
         CellPtr::from(self.get_right())
     }
 
     #[inline]
-    pub fn get_connect_left(&self) -> VarPtr {
-        VarPtr::from(self.get_left())
+    pub fn get_connect_left(&self) -> PVarPtr {
+        assert!(self.get_kind() == EquationKind::Connect);
+        PVarPtr::from(self.get_left())
     }
 
     #[inline]
-    pub fn get_connect_right(&self) -> VarPtr {
-        VarPtr::from(self.get_right())
+    pub fn get_connect_right(&self) -> PVarPtr {
+        assert!(self.get_kind() == EquationKind::Connect);
+        PVarPtr::from(self.get_right())
     }
 }
 
@@ -319,7 +324,7 @@ impl<'a, T: TermFamily> Display for EquationDisplay<'a, T> {
                     f,
                     "{} ← {}",
                     self.heap
-                        .display_var(self.symbols, self.equation.get_bind_var()),
+                        .display_var(self.symbols, self.equation.get_bind_var().into()),
                     self.heap
                         .display_cell(self.symbols, self.equation.get_bind_cell())
                 )
@@ -329,9 +334,9 @@ impl<'a, T: TermFamily> Display for EquationDisplay<'a, T> {
                     f,
                     "{} ↔ {}",
                     self.heap
-                        .display_var(self.symbols, self.equation.get_connect_left()),
+                        .display_var(self.symbols, self.equation.get_connect_left().into()),
                     self.heap
-                        .display_var(self.symbols, self.equation.get_connect_right())
+                        .display_var(self.symbols, self.equation.get_connect_right().into())
                 )
             }
         }
@@ -370,14 +375,14 @@ impl<'a, T: TermFamily> Display for EquationsDisplay<'a, T> {
 
 pub struct EquationBuilder<'a, F: TermFamily = NetF> {
     symbols: &'a SymbolBook,
-    head: &'a mut Vec<VarPtr>,
+    head: &'a mut Vec<PVarPtr>,
     equations: &'a mut Equations<F>,
     heap: &'a mut Heap<F>,
 }
 impl<'a, F: TermFamily> EquationBuilder<'a, F> {
     pub(crate) fn new(
         symbols: &'a SymbolBook,
-        head: &'a mut Vec<VarPtr>,
+        head: &'a mut Vec<PVarPtr>,
         equations: &'a mut Equations<F>,
         heap: &'a mut Heap<F>,
     ) -> Self {
@@ -395,11 +400,15 @@ impl<'a, F: TermFamily> EquationBuilder<'a, F> {
         self.equations.alloc(Equation::redex(ctr_ptr, fun_ptr))
     }
 
-    pub fn bind(&mut self, var_ptr: VarPtr, cell_ptr: CellPtr) -> EquationPtr {
+    pub fn bind(&mut self, var_ptr: PVarPtr, cell_ptr: CellPtr) -> EquationPtr {
         self.equations.alloc(Equation::bind(var_ptr, cell_ptr))
     }
 
-    pub fn connect(&mut self, left_ptr: VarPtr, right_ptr: VarPtr) -> EquationPtr {
+    pub fn connect(&mut self, left_ptr: PVarPtr, right_ptr: PVarPtr) -> EquationPtr {
+        assert!(
+            left_ptr.get_polarity() != right_ptr.get_polarity(),
+            "Cannot connect vars with same polarity"
+        );
         self.equations.alloc(Equation::connect(left_ptr, right_ptr))
     }
 
@@ -413,34 +422,46 @@ impl<'a, F: TermFamily> EquationBuilder<'a, F> {
     pub fn cell1(&mut self, name: &SymbolName, left_port: TermPtr) -> CellPtr {
         let symbol_ptr = self.symbols.get_by_name(name).unwrap(); // TODO better error handling
         let symbol = self.symbols.get(symbol_ptr);
-        left_port
+        // check left polarity
+        assert!(left_port
             .get_polarity()
-            .map(|pol| assert!(pol.is_opposite(symbol.get_left_polarity())));
+            .is_opposite(symbol.get_left_polarity()));
         self.heap.cell1(symbol_ptr, left_port)
     }
 
     pub fn cell2(&mut self, name: &SymbolName, left_port: TermPtr, right_port: TermPtr) -> CellPtr {
         let symbol_ptr = self.symbols.get_by_name(name).unwrap(); // TODO better error handling
         let symbol = self.symbols.get(symbol_ptr);
-        left_port
+        // check left polarity
+        assert!(left_port
             .get_polarity()
-            .map(|pol| assert!(pol.is_opposite(symbol.get_left_polarity())));
-        right_port
+            .is_opposite(symbol.get_left_polarity()));
+        // check right polarity
+        assert!(right_port
             .get_polarity()
-            .map(|pol| assert!(pol.is_opposite(symbol.get_right_polarity())));
+            .is_opposite(symbol.get_right_polarity()));
         self.heap.cell2(symbol_ptr, left_port, right_port)
     }
 
     // -------------------
 
-    pub fn fvar(&mut self) -> VarPtr {
-        let ptr = self.heap.fvar(F::FreeStore::default());
-        self.head.push(ptr);
-        ptr
+    pub fn input_fvar(&mut self) -> PVarPtr {
+        let fvar_ptr = self.heap.fvar(F::FreeStore::default());
+        let (neg_pvar, pos_pvar) = PVarPtr::wire(fvar_ptr);
+        self.head.push(neg_pvar);
+        pos_pvar // input fvars need to be "consumed" by the net (input from an inside-pov)
     }
 
-    pub fn bvar(&mut self) -> VarPtr {
-        self.heap.bvar(F::BoundStore::default())
+    pub fn output_fvar(&mut self) -> PVarPtr {
+        let fvar_ptr = self.heap.fvar(F::FreeStore::default());
+        let (neg_pvar, pos_pvar) = PVarPtr::wire(fvar_ptr);
+        self.head.push(pos_pvar);
+        neg_pvar // output fvars need to be "produced" by the net (output from an inside-pov)
+    }
+
+    pub fn bvar(&mut self) -> (PVarPtr, PVarPtr) {
+        let bvar_ptr = self.heap.bvar(F::BoundStore::default());
+        PVarPtr::wire(bvar_ptr)
     }
 
     // -------------------

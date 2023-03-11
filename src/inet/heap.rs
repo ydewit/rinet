@@ -5,7 +5,7 @@ use super::{
     cell::{Cell, CellPtr, Cells},
     symbol::{SymbolArity, SymbolBook, SymbolPtr},
     term::{TermFamily, TermKind, TermPtr},
-    var::{Var, VarPtr, Vars},
+    var::{PVarPtr, Var, VarPtr, Vars},
 };
 
 #[derive(Debug)]
@@ -75,8 +75,8 @@ impl<T: TermFamily> Heap<T> {
         self.vars.iter()
     }
 
-    pub fn free_var(&mut self, var_ptr: VarPtr) -> Option<Var<T>> {
-        self.vars.free(var_ptr)
+    pub fn free_var(&mut self, var_ptr: &PVarPtr) -> Option<Var<T>> {
+        self.vars.free(var_ptr.into())
     }
 
     pub fn display_cell<'a>(
@@ -133,7 +133,7 @@ impl<'a, T: TermFamily> Display for TermDisplay<'a, T> {
                 .fmt(f),
             TermKind::Var => self
                 .heap
-                .display_var(self.symbols, self.term_ptr.get_var_ptr())
+                .display_var(self.symbols, self.term_ptr.get_var_ptr().into())
                 .fmt(f),
         }
     }
@@ -152,8 +152,7 @@ impl<'a, T: TermFamily> Display for CellDisplay<'a, T> {
         };
 
         let name = self.symbols.get_name(cell.get_symbol_ptr()).unwrap();
-        let symbol = self.symbols.get(cell.get_symbol_ptr());
-        match symbol.get_arity() {
+        match cell.get_symbol_ptr().get_arity() {
             SymbolArity::Zero => {
                 write!(f, "{}", name)
             }

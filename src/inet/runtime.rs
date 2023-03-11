@@ -1,4 +1,4 @@
-use crate::inet::var::Var;
+use crate::inet::var::{PVarPtrBuffer, Var};
 
 use super::{
     cell::{Cell, CellPtr},
@@ -7,72 +7,23 @@ use super::{
     rule::{PortNum, RuleBook, RuleF, RulePort},
     symbol::{SymbolArity, SymbolBook},
     term::{TermKind, TermPtr},
-    var::VarPtr,
+    var::PVarPtr,
     Polarity,
 };
 
-pub struct BVarPtrs {
-    bvar_ptrs: [VarPtr; Self::MAX_BVARS_PER_RULE as usize],
-    len: u8,
-}
-
-impl BVarPtrs {
-    const MAX_BVARS_PER_RULE: u8 = 10;
-
-    fn new(net: &mut Net, len: u8) -> Self {
-        assert!(len < Self::MAX_BVARS_PER_RULE);
-        let mut this = Self {
-            bvar_ptrs: [VarPtr::new(0); Self::MAX_BVARS_PER_RULE as usize],
-            len,
-        };
-        for i in 0..len {
-            this.bvar_ptrs[i as usize] = net.bvar();
-        }
-        this
-    }
-
-    fn get(&self, bvar_id: u8) -> VarPtr {
-        self.bvar_ptrs[bvar_id as usize]
-    }
-}
-
-// #[derive(Debug)]
-// struct Equations {
-//     eqns: [Equation<NetF>; 10],
-//     len: u8,
-// }
-
-// impl Equations {
-//     pub fn new() -> Self {
-//         Self {
-//             eqns: [Equation::<NetF>::from(0u64);10],
-//             len: 0
-//         }
-//     }
-
-//     pub fn iter(&self) -> std::slice::Iter<Equation<NetF>>  {
-//         self.eqns[0..self.len as usize].iter()
-//     }
-
-//     pub fn push(&mut self, equation: Equation<NetF>) {
-//         assert!(self.eqns.len() > self.len as usize);
-//         self.eqns[self.len as usize] = equation;
-//         self.len += 1
-//     }
-
-//     pub fn clean(&mut self) {
-//         self.len = 0;
-//     }
-// }
-
 pub struct Runtime<'a> {
+    debug: bool,
     symbols: &'a SymbolBook,
     rules: &'a RuleBook<'a>,
 }
 
 impl<'a> Runtime<'a> {
-    pub fn new(symbols: &'a SymbolBook, rules: &'a RuleBook) -> Self {
-        Self { symbols, rules }
+    pub fn new(symbols: &'a SymbolBook, rules: &'a RuleBook, debug: bool) -> Self {
+        Self {
+            symbols,
+            rules,
+            debug,
+        }
     }
 
     pub fn eval(&mut self, mut net: Net<'a>) -> Net<'a> {
@@ -96,11 +47,13 @@ impl<'a> Runtime<'a> {
     }
 
     fn eval_redex(&mut self, mut net: Net<'a>, ctr_ptr: CellPtr, fun_ptr: CellPtr) -> Net<'a> {
-        println!(
-            "Evaluating REDEX: {} ⋈ {}",
-            net.display_cell(ctr_ptr),
-            net.display_cell(fun_ptr)
-        );
+        if self.debug {
+            println!(
+                "Evaluating REDEX: {} ⋈ {}",
+                net.display_cell(ctr_ptr),
+                net.display_cell(fun_ptr)
+            );
+        }
 
         let ctr = *net.get_cell(ctr_ptr);
         let fun = *net.get_cell(fun_ptr);
@@ -121,7 +74,7 @@ impl<'a> Runtime<'a> {
 
         // preallocate bound vars (TODO can we allocate in consecutive indexes to simplify rewrite?)
         // let bvars = net.alloc_bvars(rule.get_bvar_count());
-        let mut bvars = BVarPtrs::new(&mut net, rule.get_bvar_count());
+        let mut bvars = self.new_bvar_buffer(&mut net, rule.get_bvar_count());
 
         // interpret rule
         for rule_eqn_ptr in rule.body() {
@@ -135,19 +88,21 @@ impl<'a> Runtime<'a> {
         net
     }
 
-    fn eval_bind(&mut self, mut net: Net<'a>, var_ptr: VarPtr, cell_ptr: CellPtr) -> Net<'a> {
-        println!(
-            "Evaluating BIND: {} <- {}",
-            net.heap.display_var(self.symbols, var_ptr),
-            net.heap.display_cell(self.symbols, cell_ptr)
-        );
+    fn eval_bind(&mut self, mut net: Net<'a>, var_ptr: PVarPtr, cell_ptr: CellPtr) -> Net<'a> {
+        if self.debug {
+            println!(
+                "Evaluating BIND: {} <- {}",
+                net.heap.display_var(self.symbols, (&var_ptr).into()),
+                net.heap.display_cell(self.symbols, cell_ptr.into())
+            );
+        }
 
-        let var = net.get_var(var_ptr);
+        let var = net.get_var(&var_ptr);
         match var.get_store().get_or_set(cell_ptr) {
             Some(other_cell_ptr) => {
                 if var.is_bound() {
                     // cell communicated, free the bound var
-                    net.heap.free_var(var_ptr);
+                    net.heap.free_var(&var_ptr);
                 }
                 let (ctr_ptr, fun_ptr) = self.order_ctr_fun(&net, cell_ptr, other_cell_ptr);
                 net.body.alloc(Equation::redex(ctr_ptr, fun_ptr));
@@ -160,28 +115,36 @@ impl<'a> Runtime<'a> {
     fn eval_connect(
         &mut self,
         mut net: Net<'a>,
-        left_var_ptr: VarPtr,
-        right_var_ptr: VarPtr,
+        left_var_ptr: PVarPtr,
+        right_var_ptr: PVarPtr,
     ) -> Net<'a> {
-        println!(
-            "Evaluating CONNECT: {} ↔ {}",
-            net.heap.display_var(self.symbols, left_var_ptr),
-            net.heap.display_var(self.symbols, right_var_ptr)
-        );
+        if self.debug {
+            println!(
+                "Evaluating CONNECT: {} ↔ {}",
+                net.heap.display_var(self.symbols, (&left_var_ptr).into()),
+                net.heap.display_var(self.symbols, (&right_var_ptr).into())
+            );
+        }
 
-        let left_var = net.heap.get_var(left_var_ptr).unwrap();
-        let right_var = net.heap.get_var(right_var_ptr).unwrap();
+        let left_var = net.heap.get_var((&left_var_ptr).into()).unwrap();
+        let right_var = net.heap.get_var((&right_var_ptr).into()).unwrap();
 
-        match (left_var.get_store().get_cell_ptr(), right_var.get_store().get_cell_ptr()) {
+        match (
+            left_var.get_store().get_cell_ptr(),
+            right_var.get_store().get_cell_ptr(),
+        ) {
             (None, None) => todo!(),
             (None, Some(cell_ptr)) => {
                 net.body.alloc(Equation::bind(left_var_ptr, cell_ptr));
-            },
+            }
             (Some(cell_ptr), None) => {
                 net.body.alloc(Equation::bind(right_var_ptr, cell_ptr));
-            },
+            }
             (Some(left_cell_ptr), Some(right_cell_ptr)) => {
-                net.body.alloc(Equation::redex(left_cell_ptr, right_cell_ptr));
+                let (left_cell_ptr, right_cell_ptr) =
+                    self.order_ctr_fun(&net, left_cell_ptr, right_cell_ptr);
+                net.body
+                    .alloc(Equation::redex(left_cell_ptr, right_cell_ptr));
             }
         }
         net
@@ -190,7 +153,7 @@ impl<'a> Runtime<'a> {
     fn rewrite_equation(
         &mut self,
         net: Net<'a>,
-        bvars: &mut BVarPtrs,
+        bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
         rule_eqn: Equation<RuleF>,
@@ -209,7 +172,7 @@ impl<'a> Runtime<'a> {
                 bvars,
                 ctr,
                 fun,
-                rule_eqn.get_bind_var(),
+                &rule_eqn.get_bind_var(),
                 rule_eqn.get_bind_cell(),
             ),
             EquationKind::Connect => self.instantiate_connect(
@@ -217,8 +180,8 @@ impl<'a> Runtime<'a> {
                 bvars,
                 ctr,
                 fun,
-                rule_eqn.get_connect_left(),
-                rule_eqn.get_connect_right(),
+                &rule_eqn.get_connect_left(),
+                &rule_eqn.get_connect_right(),
             ),
         }
     }
@@ -226,7 +189,7 @@ impl<'a> Runtime<'a> {
     fn instantiate_redex(
         &mut self,
         mut net: Net<'a>,
-        bvars: &mut BVarPtrs,
+        bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
         rule_ctr_ptr: CellPtr,
@@ -235,14 +198,15 @@ impl<'a> Runtime<'a> {
         let ctr_ptr = self.instantiate_cell(&mut net, bvars, ctr, fun, rule_ctr_ptr);
         let fun_ptr = self.instantiate_cell(&mut net, bvars, ctr, fun, rule_fun_ptr);
 
-        println!(
-            "Instantiate rule redex: {} = {}  ⟶  {} = {}",
-            self.rules.display_cell(rule_ctr_ptr),
-            self.rules.display_cell(rule_fun_ptr),
-            net.heap.display_cell(self.symbols, ctr_ptr),
-            net.heap.display_cell(self.symbols, fun_ptr)
-        );
-
+        if self.debug {
+            println!(
+                "Instantiate rule redex: {} = {}  ⟶  {} = {}",
+                self.rules.display_cell(rule_ctr_ptr),
+                self.rules.display_cell(rule_fun_ptr),
+                net.heap.display_cell(self.symbols, ctr_ptr),
+                net.heap.display_cell(self.symbols, fun_ptr)
+            );
+        }
         net.body.alloc(Equation::redex(ctr_ptr, fun_ptr));
         net
     }
@@ -250,63 +214,73 @@ impl<'a> Runtime<'a> {
     fn instantiate_bind(
         &mut self,
         mut net: Net<'a>,
-        bvars: &mut BVarPtrs,
+        bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
-        rule_var_ptr: VarPtr,
+        rule_var_ptr: &PVarPtr,
         rule_cell_ptr: CellPtr,
     ) -> Net<'a> {
         let cell_ptr = self.instantiate_cell(&mut net, bvars, ctr, fun, rule_cell_ptr);
         let term_ptr = self.instantiate_var(&net, bvars, ctr, fun, rule_var_ptr);
 
-        // print!(
-        //     "Instantiate rule bind: {} ← {}",
-        //     self.rules.display_var(rule_var_ptr),
-        //     self.rules.display_cell(rule_cell_ptr)
-        // );
-
         match term_ptr.get_kind() {
             TermKind::Cell => {
-                print!(
-                    "Instantiate rule bind: {} ← {}",
-                    self.rules.display_var(rule_var_ptr),
-                    self.rules.display_cell(rule_cell_ptr)
-                );
+                if self.debug {
+                    print!(
+                        "Instantiate rule bind: {} ← {}",
+                        self.rules.display_var(rule_var_ptr.into()),
+                        self.rules.display_cell(rule_cell_ptr)
+                    );
+                }
 
                 let (ctr_ptr, fun_ptr) =
                     self.order_ctr_fun(&net, cell_ptr, term_ptr.get_cell_ptr());
-                println!(
-                    "  ⟶  {} = {}",
-                    net.heap.display_cell(self.symbols, ctr_ptr),
-                    net.heap.display_cell(self.symbols, fun_ptr)
-                );
 
+                if self.debug {
+                    println!(
+                        "  ⟶  {} = {}",
+                        net.heap.display_cell(self.symbols, ctr_ptr),
+                        net.heap.display_cell(self.symbols, fun_ptr)
+                    );
+                }
                 net.body.alloc(Equation::redex(ctr_ptr, fun_ptr));
             }
             TermKind::Var => {
-                let var = net.get_var(term_ptr.get_var_ptr());
+                let var = net.get_var(&term_ptr.get_var_ptr());
                 match var.get_store().get_or_set(cell_ptr) {
                     Some(other_cell_ptr) => {
-                        print!(
-                            "Instantiate rule bind: {}[{}] ← {}",
-                            self.rules.display_var(rule_var_ptr),
-                            net.heap.display_cell(self.symbols, other_cell_ptr),
-                            self.rules.display_cell(rule_cell_ptr)
-                        );
+                        if self.debug {
+                            print!(
+                                "Instantiate rule bind: {}[{}] ← {}",
+                                self.rules.display_var(rule_var_ptr.get_fvar_ptr()),
+                                net.heap.display_cell(self.symbols, other_cell_ptr),
+                                self.rules.display_cell(rule_cell_ptr)
+                            );
+                        }
                         let (ctr_ptr, fun_ptr) = self.order_ctr_fun(&net, cell_ptr, other_cell_ptr);
-                        println!(
-                            "  ⟶  {} = {}",
-                            net.heap.display_cell(self.symbols, ctr_ptr),
-                            net.heap.display_cell(self.symbols, fun_ptr)
-                        );
+                        if self.debug {
+                            println!(
+                                "  ⟶  {} = {}",
+                                net.heap.display_cell(self.symbols, ctr_ptr),
+                                net.heap.display_cell(self.symbols, fun_ptr)
+                            );
+                        }
                         net.body.alloc(Equation::redex(ctr_ptr, fun_ptr));
                     }
                     None => {
-                        println!(
-                            "  ⟶  {} ← {}",
-                            net.heap.display_var(self.symbols, term_ptr.get_var_ptr()),
-                            net.heap.display_cell(self.symbols, cell_ptr)
-                        );
+                        if self.debug {
+                            print!(
+                                "Instantiate rule bind: {} ← {}",
+                                self.rules.display_var(rule_var_ptr.get_fvar_ptr()),
+                                self.rules.display_cell(rule_cell_ptr)
+                            );
+                            println!(
+                                "  ⟶  {} ← {}",
+                                net.heap
+                                    .display_var(self.symbols, term_ptr.get_var_ptr().into()),
+                                net.heap.display_cell(self.symbols, cell_ptr)
+                            );
+                        }
                     }
                 }
             }
@@ -318,20 +292,22 @@ impl<'a> Runtime<'a> {
         &mut self,
         mut net: Net<'a>,
 
-        bvars: &mut BVarPtrs,
+        bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
-        rule_left_var: VarPtr,
-        rule_right_var: VarPtr,
+        rule_left_var: &PVarPtr,
+        rule_right_var: &PVarPtr,
     ) -> Net<'a> {
         let left_port_ptr = self.instantiate_var(&net, bvars, ctr, fun, rule_left_var);
         let right_port_ptr = self.instantiate_var(&net, bvars, ctr, fun, rule_right_var);
 
-        print!(
-            "Instantiate rule connect: {} ↔ {}",
-            self.rules.display_var(rule_left_var),
-            self.rules.display_var(rule_right_var)
-        );
+        if self.debug {
+            print!(
+                "Instantiate rule connect: {} ↔ {}",
+                self.rules.display_var(rule_left_var.into()),
+                self.rules.display_var(rule_right_var.into())
+            );
+        }
 
         match (left_port_ptr.get_kind(), right_port_ptr.get_kind()) {
             (TermKind::Cell, TermKind::Cell) => {
@@ -340,50 +316,58 @@ impl<'a> Runtime<'a> {
                     left_port_ptr.get_cell_ptr(),
                     right_port_ptr.get_cell_ptr(),
                 );
-                println!(
-                    "  ⟶  {} = {}",
-                    net.heap.display_cell(self.symbols, ctr_ptr),
-                    net.heap.display_cell(self.symbols, fun_ptr)
-                );
+                if self.debug {
+                    println!(
+                        "  ⟶  {} = {}",
+                        net.heap.display_cell(self.symbols, ctr_ptr),
+                        net.heap.display_cell(self.symbols, fun_ptr)
+                    );
+                }
                 net.body.alloc(Equation::redex(ctr_ptr, fun_ptr));
             }
             (TermKind::Cell, TermKind::Var) => {
                 // bind
-                println!(
-                    "  ⟶  {} ← {}",
-                    net.heap
-                        .display_var(self.symbols, right_port_ptr.get_var_ptr()),
-                    net.heap
-                        .display_cell(self.symbols, left_port_ptr.get_cell_ptr())
-                );
+                if self.debug {
+                    println!(
+                        "  ⟶  {} ← {}",
+                        net.heap
+                            .display_var(self.symbols, right_port_ptr.get_var_ptr().into()),
+                        net.heap
+                            .display_cell(self.symbols, left_port_ptr.get_cell_ptr())
+                    );
+                }
                 net.body.alloc(Equation::bind(
-                    right_port_ptr.get_var_ptr(),
+                    right_port_ptr.get_var_ptr().into(),
                     left_port_ptr.get_cell_ptr(),
                 ));
             }
             (TermKind::Var, TermKind::Cell) => {
                 // bind
-                println!(
-                    "  ⟶  {} ← {}",
-                    net.heap
-                        .display_var(self.symbols, left_port_ptr.get_var_ptr()),
-                    net.heap
-                        .display_cell(self.symbols, right_port_ptr.get_cell_ptr())
-                );
+                if self.debug {
+                    println!(
+                        "  ⟶  {} ← {}",
+                        net.heap
+                            .display_var(self.symbols, left_port_ptr.get_var_ptr().into()),
+                        net.heap
+                            .display_cell(self.symbols, right_port_ptr.get_cell_ptr())
+                    );
+                }
                 net.body.alloc(Equation::bind(
-                    left_port_ptr.get_var_ptr(),
+                    left_port_ptr.get_var_ptr().into(),
                     right_port_ptr.get_cell_ptr(),
                 ));
             }
             (TermKind::Var, TermKind::Var) => {
                 // connect
-                println!(
-                    "  ⟶  {} ↔ {}",
-                    net.heap
-                        .display_var(self.symbols, right_port_ptr.get_var_ptr()),
-                    net.heap
-                        .display_var(self.symbols, right_port_ptr.get_var_ptr())
-                );
+                if self.debug {
+                    println!(
+                        "  ⟶  {} ↔ {}",
+                        net.heap
+                            .display_var(self.symbols, right_port_ptr.get_var_ptr().into()),
+                        net.heap
+                            .display_var(self.symbols, right_port_ptr.get_var_ptr().into())
+                    );
+                }
                 net.body.alloc(Equation::connect(
                     left_port_ptr.get_var_ptr(),
                     right_port_ptr.get_var_ptr(),
@@ -396,7 +380,7 @@ impl<'a> Runtime<'a> {
     pub fn instantiate_cell(
         &mut self,
         net: &mut Net<'a>,
-        bvars: &mut BVarPtrs,
+        bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
         rule_cell_ptr: CellPtr,
@@ -425,7 +409,7 @@ impl<'a> Runtime<'a> {
     fn instantiate_port(
         &mut self,
         mut net: &mut Net<'a>,
-        bvars: &mut BVarPtrs,
+        bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
         rule_port_ptr: TermPtr,
@@ -435,7 +419,7 @@ impl<'a> Runtime<'a> {
                 .instantiate_cell(&mut net, bvars, ctr, fun, rule_port_ptr.get_cell_ptr())
                 .into(),
             TermKind::Var => {
-                self.instantiate_var(net, bvars, ctr, fun, rule_port_ptr.get_var_ptr())
+                self.instantiate_var(net, bvars, ctr, fun, &rule_port_ptr.get_var_ptr())
             }
         }
     }
@@ -443,14 +427,18 @@ impl<'a> Runtime<'a> {
     fn instantiate_var(
         &mut self,
         net: &Net<'a>,
-        bvars: &mut BVarPtrs,
+        bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
-        rule_var_ptr: VarPtr,
+        rule_var_ptr: &PVarPtr,
     ) -> TermPtr {
-        let rule_var = self.rules.heap.get_var(rule_var_ptr).unwrap();
+        let var_polarity = rule_var_ptr.get_polarity();
+        let rule_var = self.rules.heap.get_var(rule_var_ptr.into()).unwrap();
         match rule_var {
-            Var::Bound(bvar_id) => bvars.get(*bvar_id).into(),
+            Var::Bound(bvar_id) => match var_polarity {
+                Polarity::Pos => bvars.get_pos_var(*bvar_id).into(),
+                Polarity::Neg => bvars.get_neg_var(*bvar_id).into(),
+            },
             Var::Free(port) => self.resolve_fvar(ctr, fun, *port),
         }
     }
@@ -474,15 +462,27 @@ impl<'a> Runtime<'a> {
             (Polarity::Pos, Polarity::Neg) => (left_ptr, right_ptr),
             (Polarity::Neg, Polarity::Pos) => (right_ptr, left_ptr),
             (Polarity::Neg, Polarity::Neg) => panic!(
-                "Short-circuit (Neg x Neg): {} x {}",
+                "Short-circuit (Neg x Neg): {} x {} ({:?} x {:?})",
                 net.display_cell(left_ptr),
-                net.display_cell(right_ptr)
+                net.display_cell(right_ptr),
+                left_ptr,
+                right_ptr
             ),
             (Polarity::Pos, Polarity::Pos) => panic!(
-                "Short-circuit (Pos x Pos): {} x {}",
+                "Short-circuit (Pos x Pos): {} x {} ({:?} x {:?})",
                 net.display_cell(left_ptr),
-                net.display_cell(right_ptr)
+                net.display_cell(right_ptr),
+                left_ptr,
+                right_ptr
             ),
         }
+    }
+
+    pub(crate) fn new_bvar_buffer(&self, net: &mut Net, bvar_count: u8) -> PVarPtrBuffer {
+        let mut buffer = PVarPtrBuffer::new(bvar_count);
+        for i in 0..bvar_count {
+            buffer.set(i, net.bvar())
+        }
+        buffer
     }
 }

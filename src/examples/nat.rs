@@ -1,8 +1,9 @@
 use crate::inet::{
     cell::CellPtr,
     equation::EquationBuilder,
+    rule::RuleBuilder,
     symbol::{SymbolBook, SymbolName},
-    Polarity, rule::RuleBuilder,
+    Polarity,
 };
 
 // Nats
@@ -39,7 +40,6 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
         self.succ(one.into())
     }
 }
-
 
 impl<'a> EquationBuilder<'a> {
     pub fn zero(&mut self) -> CellPtr {

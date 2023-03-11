@@ -29,7 +29,7 @@ impl From<&'static str> for SymbolName {
 //     }
 // }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, PartialOrd)]
 pub enum SymbolArity {
     Zero = 0,
     One = 1,
