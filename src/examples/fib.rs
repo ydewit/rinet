@@ -80,14 +80,6 @@ impl<'a> RuleBook<'a> {
             let (x2_in, x2_out) = b.var();
             let (x3_in, x3_out) = b.var();
 
-            // ⟨ .cell ⟨"fib₀", #[.var (.bvar 2)]⟩, .var (.bvar 0) ⟩
-            let fib0 = b.fib0(x2_in.into());
-            b.bind(x0_out.into(), fib0.into());
-
-            // ⟨ .cell ⟨"fib", #[.var (.bvar 3)]⟩, .var (.bvar 1) ⟩
-            let fib = b.fib(x3_in.into());
-            b.bind(x1_out.into(), fib.into());
-
             // ⟨ .cell ⟨"dup", #[.var (.bvar 0), .var (.bvar 1)]⟩, .var (.fvar (.inr 0)) ⟩
             let l0 = b.ctr_port_0();
             let dup = b.cell2(&DUP, x0_in.into(), x1_in.into());
@@ -97,6 +89,14 @@ impl<'a> RuleBook<'a> {
             let r0 = b.fun_port_0();
             let adder = b.adder(r0.into(), x3_out.into());
             b.bind(x2_out.into(), adder.into());
+
+            // ⟨ .cell ⟨"fib₀", #[.var (.bvar 2)]⟩, .var (.bvar 0) ⟩
+            let fib0 = b.fib0(x2_in.into());
+            b.bind(x0_out.into(), fib0.into());
+
+            // ⟨ .cell ⟨"fib", #[.var (.bvar 3)]⟩, .var (.bvar 1) ⟩
+            let fib = b.fib(x3_in.into());
+            b.bind(x1_out.into(), fib.into());
         });
     }
 }
