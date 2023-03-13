@@ -143,6 +143,10 @@ impl<'a> Net<'a> {
         self.heap.get_cell(cell).unwrap()
     }
 
+    pub fn free_cell(&mut self, cell_ptr: CellPtr) -> Option<Cell<NetF>> {
+        self.heap.free_cell(cell_ptr)
+    }
+
     // Vars --------------------------
 
     pub fn vars(&self) -> ArenaPtrIter<Var<NetF>, VarPtr> {

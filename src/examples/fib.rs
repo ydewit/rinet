@@ -4,7 +4,7 @@ use crate::inet::{
     rule::{RuleBook, RuleBuilder},
     symbol::{SymbolBook, SymbolName},
     term::TermPtr,
-    Polarity,
+    Polarity, net::Net,
 };
 
 use super::{
@@ -98,5 +98,15 @@ impl<'a> RuleBook<'a> {
             let fib = b.fib(x3_in.into());
             b.bind(x1_out.into(), fib.into());
         });
+    }
+}
+
+impl<'a> Net<'a> {
+    pub fn fib(&mut self, n: usize) {
+        self.equations(|b| {
+            let result = b.output_fvar();
+            let num = b.n(n);
+            b.fibonacci(num.into(), result.into());
+        })
     }
 }

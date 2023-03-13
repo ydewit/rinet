@@ -10,8 +10,8 @@ use super::{
 
 #[derive(Debug)]
 pub struct Heap<T: TermFamily> {
-    cells: Cells<T>,
-    vars: Vars<T>,
+    pub(crate) cells: Cells<T>,
+    pub(crate) vars: Vars<T>,
 }
 
 impl<T: TermFamily> Heap<T> {

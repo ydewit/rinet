@@ -4,7 +4,7 @@ use super::{
     cell::{Cell, CellPtr},
     equation::{Equation, EquationKind},
     net::{Net, NetF},
-    rule::{PortNum, RuleBook, RuleF, RulePort},
+    rule::{PortNum, RuleBook, RuleF, RulePort, Rule},
     symbol::{SymbolArity, SymbolBook},
     term::{TermKind, TermPtr},
     var::PVarPtr,
@@ -28,7 +28,10 @@ impl<'a> Runtime<'a> {
 
     pub fn eval(&mut self, mut net: Net<'a>) -> Net<'a> {
         while net.body.len() > 0 {
+            println!("Equations: {}, Cells: {}, Vars: {}", net.body.len(), net.heap.cells.len(), net.heap.vars.len());
+            // println!("{}", net);
             let eqns: Vec<Equation<NetF>> = net.body.drain_values().collect();
+            println!("Equations: {}, Cells: {}, Vars: {}", net.body.len(), net.heap.cells.len(), net.heap.vars.len());
             for eqn in eqns {
                 net = self.eval_equation(net, eqn);
             }
@@ -55,21 +58,21 @@ impl<'a> Runtime<'a> {
             );
         }
 
-        let ctr = *net.get_cell(ctr_ptr);
-        let fun = *net.get_cell(fun_ptr);
+        let ctr = net.free_cell(ctr_ptr).unwrap();
+        let fun = net.free_cell(fun_ptr).unwrap();
 
         // find rule
         let rule_ptr = self
-            .rules
-            .get_by_symbols(ctr.get_symbol_ptr(), fun.get_symbol_ptr())
-            .or_else(|| {
-                panic!(
-                    "Rule not found for: {} >< {}",
-                    self.symbols.get_name(ctr.get_symbol_ptr()).unwrap(),
-                    self.symbols.get_name(fun.get_symbol_ptr()).unwrap()
-                )
-            })
-            .unwrap();
+        .rules
+        .get_by_symbols(ctr.get_symbol_ptr(), fun.get_symbol_ptr())
+        .or_else(|| {
+            panic!(
+                "Rule not found for: {} >< {}",
+                self.symbols.get_name(ctr.get_symbol_ptr()).unwrap(),
+                self.symbols.get_name(fun.get_symbol_ptr()).unwrap()
+            )
+        })
+        .unwrap();
         let rule = self.rules.get_rule(rule_ptr);
 
         // preallocate bound vars (TODO can we allocate in consecutive indexes to simplify rewrite?)
@@ -81,9 +84,6 @@ impl<'a> Runtime<'a> {
             let rule_eqn = self.rules.get_equation(*rule_eqn_ptr).clone();
             net = self.rewrite_equation(net, &mut bvars, ctr, fun, rule_eqn);
         }
-
-        net.heap.free_cell(ctr_ptr);
-        net.heap.free_cell(fun_ptr);
 
         net
     }
@@ -133,19 +133,20 @@ impl<'a> Runtime<'a> {
             left_var.get_store().get_cell_ptr(),
             right_var.get_store().get_cell_ptr(),
         ) {
-            (None, None) => todo!(),
-            (None, Some(cell_ptr)) => {
-                net.body.alloc(Equation::bind(left_var_ptr, cell_ptr));
-            }
-            (Some(cell_ptr), None) => {
-                net.body.alloc(Equation::bind(right_var_ptr, cell_ptr));
-            }
             (Some(left_cell_ptr), Some(right_cell_ptr)) => {
                 let (left_cell_ptr, right_cell_ptr) =
                     self.order_ctr_fun(&net, left_cell_ptr, right_cell_ptr);
                 net.body
                     .alloc(Equation::redex(left_cell_ptr, right_cell_ptr));
-            }
+            },
+            _ => () // do nothing
+            // (None, None) => todo!(),
+            // (None, Some(cell_ptr)) => {
+            //     net.body.alloc(Equation::bind(left_var_ptr, cell_ptr));
+            // }
+            // (Some(cell_ptr), None) => {
+            //     net.body.alloc(Equation::bind(right_var_ptr, cell_ptr));
+            // }
         }
         net
     }
