@@ -1,7 +1,7 @@
 use crate::inet::{
     cell::CellPtr,
     equation::{EquationBuilder, EquationPtr},
-    rule::{RuleBook, RuleBuilder},
+    rule::{RuleBuilder, RuleSet},
     symbol::{SymbolBook, SymbolName},
     term::TermPtr,
     Polarity,
@@ -44,7 +44,7 @@ impl<'a> EquationBuilder<'a> {
     }
 
     // add redex
-    pub fn add(&mut self, operand1: CellPtr, adder: CellPtr) -> EquationPtr {
+    pub fn add(&mut self, operand1: CellPtr, adder: CellPtr) {
         self.redex(operand1, adder)
     }
 
@@ -53,7 +53,7 @@ impl<'a> EquationBuilder<'a> {
         &mut self,
         operand1: CellPtr,   // constructor
         subtractor: CellPtr, // function
-    ) -> EquationPtr {
+    ) {
         self.redex(operand1, subtractor)
     }
 }
@@ -77,7 +77,7 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
     }
 }
 
-impl<'a> RuleBook<'a> {
+impl<'a> RuleSet<'a> {
     pub fn arith_rules(&mut self) {
         self.arith_add_rules();
         self.arith_sub_rules();
@@ -88,11 +88,10 @@ impl<'a> RuleBook<'a> {
         self.rule(&Z, &ADD, |b| {
             let add0 = b.fun_port_0();
             let add1 = b.fun_port_1();
-            println!("{} >< {}", add0.get_polarity(), add1.get_polarity());
             b.connect(add0.into(), add1.into());
         });
 
-        // (add x₁ x₂)=(S n)  ⟶  (add X x₂) >< n
+        // (add x₁ x₂)=(S n)  ⟶  (add X x₂) ⋈ n
         self.rule(&S, &ADD, |b| {
             let (neg_pvar, pos_pvar) = b.var();
             let fun_0 = b.fun_port_0();
@@ -100,7 +99,6 @@ impl<'a> RuleBook<'a> {
             b.bind(fun_0.into(), S_x);
 
             let fun_1 = b.fun_port_1();
-            println!("--> {}", fun_1.get_polarity());
             let add = b.cell2(&ADD, neg_pvar.into(), fun_1.into());
 
             let s_port_0 = b.ctr_port_0();

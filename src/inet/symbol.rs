@@ -91,6 +91,7 @@ impl SymbolPtr {
     };
 
     pub fn new(index: usize, arity: SymbolArity, polarity: Polarity) -> Self {
+        assert!(index != 0, "Invalid symbol index '0'");
         let mut new = Self(0);
         new.set_index(index);
         new.set_polarity(polarity);
@@ -237,6 +238,7 @@ impl Symbol {
 
     #[inline]
     pub fn get_left_polarity(&self) -> Polarity {
+        assert!(self.get_arity() == SymbolArity::One || self.get_arity() == SymbolArity::Two);
         Polarity::from(Self::LEFT_POLARITY.get(self.0))
     }
 
@@ -320,12 +322,21 @@ pub struct SymbolBook {
 }
 
 impl SymbolBook {
+    const RESERVED: SymbolName = SymbolName("⟪RESERVED⟫");
+
     pub fn new() -> Self {
-        Self {
+        let mut book = Self {
             symbols: Vec::new(),
             symbol_by_name: HashMap::new(),
             name_by_symbol: HashMap::new(),
-        }
+        };
+        // reserve index 0
+        let reserved = Symbol::new0(Polarity::Neg);
+        book.symbols.push(reserved);
+        book.symbol_by_name.insert(Self::RESERVED, 0);
+        book.name_by_symbol.insert(0, Self::RESERVED);
+
+        book
     }
 
     pub fn len(&self) -> usize {

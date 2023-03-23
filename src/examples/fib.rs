@@ -1,10 +1,11 @@
 use crate::inet::{
     cell::CellPtr,
-    equation::{EquationBuilder, EquationPtr},
-    rule::{RuleBook, RuleBuilder},
+    equation::EquationBuilder,
+    net::Net,
+    rule::{RuleBuilder, RuleSet},
     symbol::{SymbolBook, SymbolName},
     term::TermPtr,
-    Polarity, net::Net,
+    Polarity,
 };
 
 use super::{
@@ -31,7 +32,7 @@ impl<'a> EquationBuilder<'a> {
         self.cell1(&FIB_0, num.into())
     }
 
-    pub fn fibonacci(&mut self, num: TermPtr, result: TermPtr) -> EquationPtr {
+    pub fn fibonacci(&mut self, num: TermPtr, result: TermPtr) {
         let fib = self.cell1(&FIB, result);
         self.redex(num.into(), fib.into())
     }
@@ -47,9 +48,9 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
     }
 }
 
-impl<'a> RuleBook<'a> {
+impl<'a> RuleSet<'a> {
     pub fn fib_rules(&mut self) {
-        // Z >< (fib r₀)  ⟶ r₀ ← Z
+        // Z ⋈ (fib r₀)  ⟶ r₀ ← Z
         self.rule(&Z, &FIB, |b| {
             let r0 = b.fun_port_0();
             // let add1 = b.fun_port_1(); // ERROR
@@ -57,7 +58,7 @@ impl<'a> RuleBook<'a> {
             b.bind(r0.into(), zero.into());
         });
 
-        // (S l₀) >< (fib r₀)  ⟶  l₀ = (fib₀ r₀)
+        // (S l₀) ⋈ (fib r₀)  ⟶  l₀ = (fib₀ r₀)
         self.rule(&S, &FIB, |b| {
             let r0 = b.fun_port_0();
             let fib0 = b.fib0(r0.into());
@@ -66,14 +67,14 @@ impl<'a> RuleBook<'a> {
             b.bind(l0.into(), fib0.into());
         });
 
-        // Z >< (fib₀ r₀)  ⟶ r₀ ← (S Z)
+        // Z ⋈ (fib₀ r₀)  ⟶ r₀ ← (S Z)
         self.rule(&Z, &FIB_0, |b| {
             let r0 = b.fun_port_0();
             let one = b.one();
             b.bind(r0.into(), one.into());
         });
 
-        // (S l₀) >< (fib₀ r₀)  ⟶  x₀ ← (fib₀ x₂); x₁ ← (fib x₃); l₀ ← (dup x₀ x₁); x₂ ← (add x₃ r₀)
+        // (S l₀) ⋈ (fib₀ r₀)  ⟶  x₀ ← (fib₀ x₂); x₁ ← (fib x₃); l₀ ← (dup x₀ x₁); x₂ ← (add x₃ r₀)
         self.rule(&S, &FIB_0, |b| {
             let (x0_in, x0_out) = b.var();
             let (x1_in, x1_out) = b.var();

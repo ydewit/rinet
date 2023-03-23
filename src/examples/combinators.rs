@@ -1,7 +1,7 @@
 use crate::inet::{
     cell::CellPtr,
     equation::{EquationBuilder, EquationPtr},
-    rule::RuleBook,
+    rule::RuleSet,
     symbol::{SymbolBook, SymbolName},
     term::TermPtr,
     Polarity,
@@ -24,15 +24,15 @@ impl<'a> EquationBuilder<'a> {
     }
 
     // Redex
-    pub fn duplicate(&mut self, cell: TermPtr, dup1: TermPtr, dup2: TermPtr) -> EquationPtr {
+    pub fn duplicate(&mut self, cell: TermPtr, dup1: TermPtr, dup2: TermPtr) {
         let duplicator = self.duplicator(dup1.into(), dup2.into());
         self.redex(cell.into(), duplicator.into())
     }
 }
 
-impl<'a> RuleBook<'a> {
+impl<'a> RuleSet<'a> {
     pub fn define_combinator_rules(&mut self) {
-        // Z >< dup
+        // Z ⋈ dup
         self.rule(&Z, &DUP, |b| {
             let r0 = b.fun_port_0();
             let z0 = b.cell0(&Z);
@@ -43,7 +43,7 @@ impl<'a> RuleBook<'a> {
             b.bind(r1.into(), z1.into());
         });
 
-        // S >< dup
+        // S ⋈ dup
         self.rule(&S, &DUP, |b| {
             let (x0_input, x0_output) = b.var();
             let (x1_input, x1_output) = b.var();

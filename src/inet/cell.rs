@@ -5,12 +5,14 @@ use std::{
 
 use super::{
     arena::{Arena, ArenaPtr, ArenaValue},
-    symbol::SymbolPtr,
+    arenaraw::RawArena,
+    rule::PortNum,
+    symbol::{SymbolArity, SymbolPtr},
     term::{TermFamily, TermPtr},
     BitSet32, BitSet64, Polarity,
 };
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(PartialEq)]
 pub struct CellPtr(u32);
 impl CellPtr {
     const INDEX: BitSet32<23> = BitSet32 {
@@ -31,7 +33,7 @@ impl CellPtr {
         offset: 0,
     };
 
-    pub fn new(index: usize, polarity: Polarity) -> Self {
+    fn new(index: usize, polarity: Polarity) -> Self {
         let mut new = Self(0);
         // new.set_kind(TermKind::Cell);
         new.set_polarity(polarity);
@@ -136,15 +138,15 @@ impl<T: TermFamily> Cell<T> {
     pub fn new1(symbol_ptr: SymbolPtr, port: TermPtr) -> Self {
         let mut cell = Self(0, PhantomData);
         cell.set_symbol_ptr(symbol_ptr);
-        cell.set_left_port(port);
+        cell.set_port(PortNum::Zero, port);
         cell
     }
 
-    pub fn new2(symbol_ptr: SymbolPtr, left_port: TermPtr, right_port: TermPtr) -> Self {
+    pub fn new2(symbol_ptr: &SymbolPtr, left_port: TermPtr, right_port: TermPtr) -> Self {
         let mut cell = Self(0, PhantomData);
-        cell.set_symbol_ptr(symbol_ptr);
-        cell.set_left_port(left_port);
-        cell.set_right_port(right_port);
+        cell.set_symbol_ptr(*symbol_ptr);
+        cell.set_port(PortNum::Zero, left_port);
+        cell.set_port(PortNum::One, right_port);
         cell
     }
 
@@ -159,22 +161,52 @@ impl<T: TermFamily> Cell<T> {
     }
 
     #[inline]
-    pub fn get_left_port(&self) -> TermPtr {
-        (Self::LEFT_PORT.get(self.0) as u32).into()
+    pub fn get_port(&self, port_num: PortNum) -> TermPtr {
+        assert!(port_num.is_valid_port(self.get_symbol_ptr().get_arity()));
+        match port_num {
+            PortNum::Zero => self.get_left_port_bits(),
+            PortNum::One => self.get_right_port_bits(),
+        }
+        .into()
     }
 
     #[inline]
-    fn set_left_port(&mut self, port: TermPtr) {
-        self.0 = Self::LEFT_PORT.set(self.0, port.get_ptr() as u64)
+    pub fn get_left_port(&self) -> TermPtr {
+        self.get_port(PortNum::Zero)
     }
 
     #[inline]
     pub fn get_right_port(&self) -> TermPtr {
-        (Self::RIGHT_PORT.get(self.0) as u32).into()
+        self.get_port(PortNum::One)
     }
 
-    fn set_right_port(&mut self, port: TermPtr) {
-        self.0 = Self::RIGHT_PORT.set(self.0, port.get_ptr() as u64)
+    #[inline]
+    pub fn set_port(&mut self, port_num: PortNum, port: TermPtr) {
+        assert!(port_num.is_valid_port(self.get_symbol_ptr().get_arity()));
+        match port_num {
+            PortNum::Zero => self.set_left_port_bits(port.get_ptr()),
+            PortNum::One => self.set_right_port_bits(port.get_ptr()),
+        }
+    }
+
+    #[inline]
+    fn get_left_port_bits(&self) -> u32 {
+        Self::LEFT_PORT.get(self.0) as u32
+    }
+
+    #[inline]
+    fn set_left_port_bits(&mut self, port_bits: u32) {
+        self.0 = Self::LEFT_PORT.set(self.0, port_bits as u64)
+    }
+
+    #[inline]
+    pub fn get_right_port_bits(&self) -> u32 {
+        Self::RIGHT_PORT.get(self.0) as u32
+    }
+
+    #[inline]
+    fn set_right_port_bits(&mut self, port_bits: u32) {
+        self.0 = Self::RIGHT_PORT.set(self.0, port_bits as u64)
     }
 
     pub fn to_ptr(&self, index: usize) -> CellPtr {
@@ -194,27 +226,35 @@ impl<T: TermFamily> Binary for Cell<T> {
             f,
             "{:014b}_{:025b}_{:025b}",
             self.get_symbol_ptr().get_raw(),
-            self.get_left_port().get_ptr(),
-            self.get_right_port().get_ptr()
+            self.get_left_port_bits(),
+            self.get_right_port_bits()
         )
     }
 }
 
 impl<T: TermFamily> Debug for Cell<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let name = format!("Cell({:064b})", self.0);
+        let arity = self.get_symbol_ptr().get_arity();
+        let name = format!("Cell{}({:064b})", arity as u8, self.0);
         let mut b = f.debug_struct(&name);
         b.field("symbol", &self.get_symbol_ptr());
-        b.field("left", &self.get_left_port());
-        b.field("right", &self.get_right_port());
+        match self.get_symbol_ptr().get_arity() {
+            SymbolArity::Zero => (),
+            SymbolArity::One => {
+                b.field("port", &self.get_port(PortNum::Zero));
+            }
+            SymbolArity::Two => {
+                b.field("left", &self.get_port(PortNum::Zero));
+                b.field("right", &self.get_port(PortNum::One));
+            }
+        }
         b.finish()
     }
 }
 
-pub type Cells<T: TermFamily> = Arena<Cell<T>, CellPtr>;
+pub type Cells<T> = RawArena<Cell<T>, CellPtr>;
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 }

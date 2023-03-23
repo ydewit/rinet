@@ -1,11 +1,12 @@
-use std::marker::PhantomData;
+use std::{fmt::Debug, marker::PhantomData};
 
-pub trait ArenaPtr {
+pub trait ArenaPtr: Debug {
     fn get_index(&self) -> usize;
 }
 
+#[derive(Debug)]
 pub struct SimplePtr {
-    index: usize,
+    pub(crate) index: usize,
 }
 impl ArenaPtr for SimplePtr {
     fn get_index(&self) -> usize {
@@ -13,7 +14,7 @@ impl ArenaPtr for SimplePtr {
     }
 }
 
-pub trait ArenaValue<P: ArenaPtr> {
+pub trait ArenaValue<P: ArenaPtr>: Debug {
     fn to_ptr(&self, index: usize) -> P;
 }
 
@@ -66,7 +67,7 @@ impl<'a, T: ArenaValue<P>, P: ArenaPtr> Iterator for ArenaValueIter<'a, T, P> {
 }
 
 #[derive(Debug)]
-enum ArenaEntry<T> {
+pub enum ArenaEntry<T: Debug> {
     Occupied(T),
     Free(usize),
 }

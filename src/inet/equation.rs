@@ -13,7 +13,7 @@ use super::{
     symbol::{SymbolBook, SymbolName},
     term::{TermFamily, TermPtr},
     var::PVarPtr,
-    BitSet64, BitSet32,
+    BitSet32, BitSet64,
 };
 
 #[derive(Debug, PartialEq)]
@@ -142,7 +142,7 @@ impl Debug for EquationPtr {
 }
 
 #[derive(Clone, Copy)]
-pub struct Equation<T: TermFamily>(pub u64, PhantomData<T>);
+pub struct Equation<T: TermFamily>(pub u64, pub PhantomData<T>);
 impl<T: TermFamily> Equation<T> {
     const RIGHT: BitSet64<31> = BitSet64 {
         mask: 0b00000000_00000000_00000000_00000000_01111111_11111111_11111111_11111111,
@@ -314,9 +314,9 @@ impl<'a, T: TermFamily> Display for EquationDisplay<'a, T> {
                     f,
                     "{} = {}",
                     self.heap
-                        .display_cell(self.symbols, self.equation.get_redex_ctr()),
+                        .display_cell(self.symbols, &self.equation.get_redex_ctr()),
                     self.heap
-                        .display_cell(self.symbols, self.equation.get_redex_fun())
+                        .display_cell(self.symbols, &self.equation.get_redex_fun())
                 )
             }
             EquationKind::Bind => {
@@ -326,7 +326,7 @@ impl<'a, T: TermFamily> Display for EquationDisplay<'a, T> {
                     self.heap
                         .display_var(self.symbols, self.equation.get_bind_var().into()),
                     self.heap
-                        .display_cell(self.symbols, self.equation.get_bind_cell())
+                        .display_cell(self.symbols, &self.equation.get_bind_cell())
                 )
             }
             EquationKind::Connect => {
@@ -347,7 +347,7 @@ pub type Equations<T> = Arena<Equation<T>, EquationPtr>;
 
 pub struct EquationsDisplay<'a, T: TermFamily> {
     pub symbols: &'a SymbolBook,
-    pub body: &'a Equations<T>,
+    pub body: &'a Vec<Equation<T>>,
     pub heap: &'a Heap<T>,
 }
 impl<'a, T: TermFamily> EquationsDisplay<'a, T> {
@@ -361,14 +361,8 @@ impl<'a, T: TermFamily> EquationsDisplay<'a, T> {
 }
 impl<'a, T: TermFamily> Display for EquationsDisplay<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.body.iter().fold(Ok(()), |result, eqn_ptr| {
-            result.and_then(|_| {
-                write!(
-                    f,
-                    " {}",
-                    self.to_equation_item(self.body.get(eqn_ptr).unwrap())
-                )
-            })
+        self.body.iter().fold(Ok(()), |result, eqn| {
+            result.and_then(|_| write!(f, " {}", self.to_equation_item(eqn)))
         })
     }
 }
@@ -376,14 +370,14 @@ impl<'a, T: TermFamily> Display for EquationsDisplay<'a, T> {
 pub struct EquationBuilder<'a, F: TermFamily = NetF> {
     symbols: &'a SymbolBook,
     head: &'a mut Vec<PVarPtr>,
-    equations: &'a mut Equations<F>,
+    equations: &'a mut Vec<Equation<F>>,
     heap: &'a mut Heap<F>,
 }
 impl<'a, F: TermFamily> EquationBuilder<'a, F> {
     pub(crate) fn new(
         symbols: &'a SymbolBook,
         head: &'a mut Vec<PVarPtr>,
-        equations: &'a mut Equations<F>,
+        equations: &'a mut Vec<Equation<F>>,
         heap: &'a mut Heap<F>,
     ) -> Self {
         Self {
@@ -394,22 +388,22 @@ impl<'a, F: TermFamily> EquationBuilder<'a, F> {
         }
     }
 
-    pub fn redex(&mut self, ctr_ptr: CellPtr, fun_ptr: CellPtr) -> EquationPtr {
+    pub fn redex(&mut self, ctr_ptr: CellPtr, fun_ptr: CellPtr) {
         assert!(ctr_ptr.get_polarity() == Polarity::Pos);
         assert!(fun_ptr.get_polarity() == Polarity::Neg);
-        self.equations.alloc(Equation::redex(ctr_ptr, fun_ptr))
+        self.equations.push(Equation::redex(ctr_ptr, fun_ptr))
     }
 
-    pub fn bind(&mut self, var_ptr: PVarPtr, cell_ptr: CellPtr) -> EquationPtr {
-        self.equations.alloc(Equation::bind(var_ptr, cell_ptr))
+    pub fn bind(&mut self, var_ptr: PVarPtr, cell_ptr: CellPtr) {
+        self.equations.push(Equation::bind(var_ptr, cell_ptr))
     }
 
-    pub fn connect(&mut self, left_ptr: PVarPtr, right_ptr: PVarPtr) -> EquationPtr {
+    pub fn connect(&mut self, left_ptr: PVarPtr, right_ptr: PVarPtr) {
         assert!(
             left_ptr.get_polarity() != right_ptr.get_polarity(),
             "Cannot connect vars with same polarity"
         );
-        self.equations.alloc(Equation::connect(left_ptr, right_ptr))
+        self.equations.push(Equation::connect(left_ptr, right_ptr))
     }
 
     // ----------------
@@ -440,7 +434,7 @@ impl<'a, F: TermFamily> EquationBuilder<'a, F> {
         assert!(right_port
             .get_polarity()
             .is_opposite(symbol.get_right_polarity()));
-        self.heap.cell2(symbol_ptr, left_port, right_port)
+        self.heap.cell2(&symbol_ptr, left_port, right_port)
     }
 
     // -------------------

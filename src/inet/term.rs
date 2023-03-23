@@ -8,7 +8,7 @@ use super::{
     BitSet32, Polarity,
 };
 
-pub trait TermFamily: Clone {
+pub trait TermFamily: Clone + Debug {
     type BoundStore: Default + Debug;
     type FreeStore: Default + Debug;
 

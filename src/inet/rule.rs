@@ -53,6 +53,15 @@ pub enum PortNum {
     One = 1,
 }
 
+impl PortNum {
+    pub fn is_valid_port(&self, arity: SymbolArity) -> bool {
+        match arity {
+            SymbolArity::Zero => false,
+            SymbolArity::One => *self == PortNum::Zero,
+            SymbolArity::Two => true,
+        }
+    }
+}
 #[derive(Debug, Clone, Copy)]
 pub enum RulePort {
     Ctr(PortNum),
@@ -156,14 +165,14 @@ impl ArenaValue<RulePtr> for Rule {
 pub type Rules = Arena<Rule, RulePtr>;
 
 pub struct RuleBuilder<'a, 'b> {
-    rules: &'b mut RuleBook<'a>,
+    rules: &'b mut RuleSet<'a>,
     rule: Rule,
     ctr_symbol: Symbol,
     fun_symbol: Symbol,
 }
 
 impl<'a, 'b> RuleBuilder<'a, 'b> {
-    fn new(ctr: SymbolPtr, fun: SymbolPtr, rules: &'b mut RuleBook<'a>) -> Self {
+    fn new(ctr: SymbolPtr, fun: SymbolPtr, rules: &'b mut RuleSet<'a>) -> Self {
         let ctr_symbol = rules.symbols.get(ctr);
         let fun_symbol = rules.symbols.get(fun);
         Self {
@@ -242,7 +251,7 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
             "Short-circuit connecting right port for {}",
             self.rules.symbols.display_symbol(symbol_ptr)
         );
-        self.rules.heap.cell2(symbol_ptr, left_port, right_port)
+        self.rules.heap.cell2(&symbol_ptr, left_port, right_port)
     }
 
     /// ------------------------------------------------
@@ -310,7 +319,7 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
 }
 
 #[derive(Debug)]
-pub struct RuleBook<'a> {
+pub struct RuleSet<'a> {
     symbols: &'a SymbolBook,
     rules: Rules,
     rule_by_symbols: HashMap<RuleKey, usize>,
@@ -318,7 +327,7 @@ pub struct RuleBook<'a> {
     pub(crate) heap: Heap<RuleF>,
 }
 
-impl<'a> RuleBook<'a> {
+impl<'a> RuleSet<'a> {
     fn to_key(left: SymbolPtr, right: SymbolPtr) -> RuleKey {
         (
             std::cmp::min(left.get_index(), right.get_index()),
@@ -350,7 +359,7 @@ impl<'a> RuleBook<'a> {
     }
 
     pub fn get_by_symbols(&self, ctr: SymbolPtr, fun: SymbolPtr) -> Option<RulePtr> {
-        let key = RuleBook::to_key(ctr, fun);
+        let key = RuleSet::to_key(ctr, fun);
         match self.rule_by_symbols.get(&key) {
             Some(index) => Some(RulePtr::new(*index)),
             None => None,
@@ -376,7 +385,7 @@ impl<'a> RuleBook<'a> {
         RuleBodyDisplay { body, rules: self }
     }
 
-    pub fn display_cell(&'a self, cell_ptr: CellPtr) -> CellDisplay<RuleF> {
+    pub fn display_cell(&'a self, cell_ptr: &'a CellPtr) -> CellDisplay<RuleF> {
         self.heap.display_cell(self.symbols, cell_ptr)
     }
 
@@ -393,7 +402,7 @@ impl<'a> RuleBook<'a> {
     }
 }
 
-impl<'a> Display for RuleBook<'a> {
+impl<'a> Display for RuleSet<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.rules.iter().fold(Ok(()), |result, rule_ptr| {
             result.and_then(|_| writeln!(f, "{}", self.display_rule(rule_ptr)))
@@ -403,7 +412,7 @@ impl<'a> Display for RuleBook<'a> {
 
 pub struct RuleDisplay<'a> {
     rule_ptr: RulePtr,
-    rules: &'a RuleBook<'a>,
+    rules: &'a RuleSet<'a>,
 }
 impl<'a> Display for RuleDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -430,7 +439,7 @@ impl<'a> Display for RuleDisplay<'a> {
 
 pub struct RuleBodyDisplay<'a> {
     pub body: &'a [EquationPtr],
-    pub rules: &'a RuleBook<'a>,
+    pub rules: &'a RuleSet<'a>,
 }
 impl<'a> Display for RuleBodyDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -502,7 +511,7 @@ mod tests {
     //     let eqn = Equation::new(vec![], EquationKind::Variable);
     //     let ptr = rules.add(Rule::new(ctr, fun, 0, vec![eqn.to_ptr(0)])).to_ptr(0);
 
-    //     let book = RuleBook::new(symbols, rules, Cells::new(), Equations::new(), FVars::new(), BVars::new());
+    //     let book = RuleSet::new(symbols, rules, Cells::new(), Equations::new(), FVars::new(), BVars::new());
 
     //     let rule_item = RuleDisplay {
     //         rule_ptr: ptr,
@@ -510,6 +519,6 @@ mod tests {
     //         book: &book,
     //     };
     //     let rule_str = format!("{}", rule_item);
-    //     assert_eq!(rule_str, "Ctr >< Fun  ⟶  , ?0 := 0");
+    //     assert_eq!(rule_str, "Ctr ⋈ Fun  ⟶  , ?0 := 0");
     // }
 }

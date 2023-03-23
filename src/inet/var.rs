@@ -2,11 +2,11 @@ use std::fmt::{Binary, Debug, Formatter};
 
 use super::{
     arena::{Arena, ArenaPtr, ArenaValue},
+    arenaraw::RawArena,
     term::TermFamily,
     BitSet32, Polarity,
 };
 
-#[derive(Debug)]
 pub struct PVarPtr(u32);
 impl PVarPtr {
     const POLARITY: BitSet32<1> = BitSet32 {
@@ -53,6 +53,15 @@ impl PVarPtr {
     }
 }
 
+impl Debug for PVarPtr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let name = format!("PVarPtr({:0b})", self.0);
+        let mut b = f.debug_struct(&name);
+        b.field("polarity", &self.get_polarity());
+        b.field("index", &self.get_fvar_ptr().get_index());
+        b.finish()
+    }
+}
 impl Into<VarPtr> for PVarPtr {
     fn into(self) -> VarPtr {
         self.get_fvar_ptr()
@@ -226,7 +235,7 @@ impl<T: TermFamily> ArenaValue<VarPtr> for Var<T> {
     }
 }
 
-pub type Vars<T> = Arena<Var<T>, VarPtr>;
+pub type Vars<T> = RawArena<Var<T>, VarPtr>;
 
 #[cfg(test)]
 mod tests {
