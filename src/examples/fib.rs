@@ -105,7 +105,7 @@ impl<'a> RuleSet<'a> {
 impl<'a> Net<'a> {
     pub fn fib(&mut self, n: usize) {
         self.equations(|b| {
-            let result = b.output_fvar();
+            let result = b.output();
             let num = b.n(n);
             b.fibonacci(num.into(), result.into());
         })

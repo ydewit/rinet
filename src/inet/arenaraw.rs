@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{alloc::Layout, ptr::NonNull};
 
-use std::{alloc, thread};
+use std::alloc;
 
 use super::arena::{ArenaEntry, ArenaPtr, ArenaValue, SimplePtr};
 

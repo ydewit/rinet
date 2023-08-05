@@ -64,8 +64,8 @@ impl<'a> Runtime<'a> {
                 scope,
                 symbols,
                 heap,
-                &eqn.get_connect_left(),
-                &eqn.get_connect_right(),
+                eqn.get_connect_left(),
+                eqn.get_connect_right(),
             ),
         }
     }
@@ -133,6 +133,7 @@ impl<'a> Runtime<'a> {
                 let (ctr_ptr, fun_ptr) =
                     self.order_ctr_fun(symbols, heap, cell_ptr, other_cell_ptr);
                 let this = self;
+                println!("Got REDEX bind!!!!");
                 scope.spawn(move |scope| this.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
             }
             (_, None) => {
@@ -146,20 +147,20 @@ impl<'a> Runtime<'a> {
         scope: &Scope<'scope>,
         symbols: &'scope SymbolBook,
         heap: &'scope Heap<NetF>,
-        left_var_ptr: &PVarPtr,
-        right_var_ptr: &PVarPtr,
+        left_var_ptr: PVarPtr,
+        right_var_ptr: PVarPtr,
     ) {
         if self.debug {
             println!(
                 "[{:?}] Evaluating CONNECT: {} ↔ {}",
                 thread::current().id(),
-                heap.display_var(symbols, left_var_ptr.into()),
-                heap.display_var(symbols, right_var_ptr.into())
+                heap.display_var(symbols, &left_var_ptr.get_fvar_ptr()),
+                heap.display_var(symbols, &right_var_ptr.get_fvar_ptr())
             );
         }
 
-        let left_var = heap.get_var(left_var_ptr.into());
-        let right_var = heap.get_var(right_var_ptr.into());
+        let left_var = heap.get_var(&left_var_ptr);
+        let right_var = heap.get_var(&right_var_ptr);
 
         match (
             left_var.get_store().get_cell_ptr(),
@@ -169,20 +170,33 @@ impl<'a> Runtime<'a> {
                 let (left_cell_ptr, right_cell_ptr) =
                     self.order_ctr_fun(symbols, heap, left_cell_ptr, right_cell_ptr);
 
+                println!("Got REDEX!!!");
                 scope.spawn(|scope| {
                     self.eval_redex(scope, symbols, heap, left_cell_ptr, right_cell_ptr)
                 });
             }
             (None, Some(cell_ptr)) => {
-                // TODO wait on left var
                 // Some(Equation::bind(left_var_ptr, cell_ptr))
+                // println!("[{:?}] TODO: wait on left var: {}", thread::current().id(), heap.display_var(symbols, &left_var_ptr.get_fvar_ptr()));
+                // TODO can we wait on a condition instead??
+                scope.spawn(|scope|{
+                    self.eval_bind(scope, symbols, heap, left_var_ptr, cell_ptr)
+                })
             }
             (Some(cell_ptr), None) => {
                 // Some(Equation::bind(right_var_ptr, cell_ptr))
+                // println!("[{:?}] TODO: got left var: create bind: {}", thread::current().id(), heap.display_var(symbols, &right_var_ptr.get_fvar_ptr()));
+                // TODO can we wait on a condition??
+                scope.spawn(|scope|{
+                    self.eval_bind(scope, symbols, heap, right_var_ptr, cell_ptr)
+                })
             }
             (None, None) => {
-                // Todo: wait on both vars
-                //Some(Equation::connect(left_var_ptr, right_var_ptr))
+                // println!("[{:?}] TODO: got nothing: wait for vars {} and {}", thread::current().id(), heap.display_var(symbols, &left_var_ptr.get_fvar_ptr()), heap.display_var(symbols, &right_var_ptr.get_fvar_ptr()));
+                // TODO can we wait on a condition??
+                scope.spawn(|scope|{
+                    self.eval_connect(scope, symbols, heap, left_var_ptr, right_var_ptr)
+                })
             }
         }
     }
@@ -279,7 +293,7 @@ impl<'a> Runtime<'a> {
                     print!(
                         "[{:?}] Instantiate rule bind: {} ← {}",
                         thread::current().id(),
-                        self.rules.display_var(rule_var_ptr.into()),
+                        self.rules.display_var(&rule_var_ptr.get_fvar_ptr()),
                         self.rules.display_cell(rule_cell_ptr)
                     );
                 }
@@ -306,7 +320,7 @@ impl<'a> Runtime<'a> {
                             print!(
                                 "[{:?}] Instantiate rule bind: {}[{}] ← {}",
                                 thread::current().id(),
-                                self.rules.display_var(rule_var_ptr.get_fvar_ptr()),
+                                self.rules.display_var(&rule_var_ptr.get_fvar_ptr()),
                                 heap.display_cell(symbols, &other_cell_ptr),
                                 self.rules.display_cell(rule_cell_ptr)
                             );
@@ -329,12 +343,12 @@ impl<'a> Runtime<'a> {
                             print!(
                                 "[{:?}] Instantiate rule bind: {} ← {}",
                                 thread::current().id(),
-                                self.rules.display_var(rule_var_ptr.get_fvar_ptr()),
+                                self.rules.display_var(&rule_var_ptr.get_fvar_ptr()),
                                 self.rules.display_cell(rule_cell_ptr)
                             );
                             println!(
                                 "  ⟶  {} ← {}",
-                                heap.display_var(symbols, term_ptr.get_var_ptr().into()),
+                                heap.display_var(symbols, &term_ptr.get_var_ptr().get_fvar_ptr()),
                                 heap.display_cell(symbols, &cell_ptr)
                             );
                         }
@@ -363,8 +377,8 @@ impl<'a> Runtime<'a> {
             print!(
                 "[{:?}] Instantiate rule connect: {} ↔ {}",
                 thread::current().id(),
-                self.rules.display_var(rule_left_var.into()),
-                self.rules.display_var(rule_right_var.into())
+                self.rules.display_var(&rule_left_var.get_fvar_ptr()),
+                self.rules.display_var(&rule_right_var.get_fvar_ptr())
             );
         }
 
@@ -391,7 +405,7 @@ impl<'a> Runtime<'a> {
                 if self.debug {
                     println!(
                         "  ⟶  {} ← {}",
-                        heap.display_var(symbols, right_port_ptr.get_var_ptr().into()),
+                        heap.display_var(symbols, &right_port_ptr.get_var_ptr().get_fvar_ptr()),
                         heap.display_cell(symbols, &left_port_ptr.get_cell_ptr())
                     );
                 }
@@ -411,7 +425,7 @@ impl<'a> Runtime<'a> {
                 if self.debug {
                     println!(
                         "  ⟶  {} ← {}",
-                        heap.display_var(symbols, left_port_ptr.get_var_ptr().into()),
+                        heap.display_var(symbols, &left_port_ptr.get_var_ptr().get_fvar_ptr()),
                         heap.display_cell(symbols, &right_port_ptr.get_cell_ptr())
                     );
                 }
@@ -431,8 +445,8 @@ impl<'a> Runtime<'a> {
                 if self.debug {
                     println!(
                         "  ⟶  {} ↔ {}",
-                        heap.display_var(symbols, right_port_ptr.get_var_ptr().into()),
-                        heap.display_var(symbols, right_port_ptr.get_var_ptr().into())
+                        heap.display_var(symbols, &right_port_ptr.get_var_ptr().get_fvar_ptr()),
+                        heap.display_var(symbols, &right_port_ptr.get_var_ptr().get_fvar_ptr())
                     );
                 }
 
@@ -441,8 +455,8 @@ impl<'a> Runtime<'a> {
                         scope,
                         symbols,
                         heap,
-                        &left_port_ptr.get_var_ptr(),
-                        &right_port_ptr.get_var_ptr(),
+                        left_port_ptr.get_var_ptr(),
+                        right_port_ptr.get_var_ptr(),
                     )
                 });
             }

@@ -389,7 +389,7 @@ impl<'a> RuleSet<'a> {
         self.heap.display_cell(self.symbols, cell_ptr)
     }
 
-    pub fn display_var(&'a self, var_ptr: VarPtr) -> VarDisplay<RuleF> {
+    pub fn display_var(&'a self, var_ptr: &'a VarPtr) -> VarDisplay<RuleF> {
         self.heap.display_var(self.symbols, var_ptr)
     }
 

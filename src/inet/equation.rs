@@ -324,7 +324,7 @@ impl<'a, T: TermFamily> Display for EquationDisplay<'a, T> {
                     f,
                     "{} ← {}",
                     self.heap
-                        .display_var(self.symbols, self.equation.get_bind_var().into()),
+                        .display_var(self.symbols, &self.equation.get_bind_var().get_fvar_ptr()),
                     self.heap
                         .display_cell(self.symbols, &self.equation.get_bind_cell())
                 )
@@ -334,9 +334,9 @@ impl<'a, T: TermFamily> Display for EquationDisplay<'a, T> {
                     f,
                     "{} ↔ {}",
                     self.heap
-                        .display_var(self.symbols, self.equation.get_connect_left().into()),
+                        .display_var(self.symbols, &self.equation.get_connect_left().get_fvar_ptr()),
                     self.heap
-                        .display_var(self.symbols, self.equation.get_connect_right().into())
+                        .display_var(self.symbols, &self.equation.get_connect_right().get_fvar_ptr())
                 )
             }
         }
@@ -439,21 +439,21 @@ impl<'a, F: TermFamily> EquationBuilder<'a, F> {
 
     // -------------------
 
-    pub fn input_fvar(&mut self) -> PVarPtr {
+    pub fn input(&mut self) -> PVarPtr {
         let fvar_ptr = self.heap.fvar(F::FreeStore::default());
         let (neg_pvar, pos_pvar) = PVarPtr::wire(fvar_ptr);
         self.head.push(neg_pvar);
         pos_pvar // input fvars need to be "consumed" by the net (input from an inside-pov)
     }
 
-    pub fn output_fvar(&mut self) -> PVarPtr {
+    pub fn output(&mut self) -> PVarPtr {
         let fvar_ptr = self.heap.fvar(F::FreeStore::default());
         let (neg_pvar, pos_pvar) = PVarPtr::wire(fvar_ptr);
         self.head.push(pos_pvar);
         neg_pvar // output fvars need to be "produced" by the net (output from an inside-pov)
     }
 
-    pub fn bvar(&mut self) -> (PVarPtr, PVarPtr) {
+    pub fn var(&mut self) -> (PVarPtr, PVarPtr) {
         let bvar_ptr = self.heap.bvar(F::BoundStore::default());
         PVarPtr::wire(bvar_ptr)
     }

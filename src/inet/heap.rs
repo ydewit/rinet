@@ -123,7 +123,7 @@ impl<T: TermFamily> Heap<T> {
         }
     }
 
-    pub fn display_var<'a>(&'a self, symbols: &'a SymbolBook, var_ptr: VarPtr) -> VarDisplay<T> {
+    pub fn display_var<'a>(&'a self, symbols: &'a SymbolBook, var_ptr: &'a VarPtr) -> VarDisplay<T> {
         VarDisplay {
             var_ptr,
             symbols: symbols,
@@ -163,7 +163,7 @@ impl<'a, T: TermFamily> Display for TermDisplay<'a, T> {
                 .fmt(f),
             TermKind::Var => self
                 .heap
-                .display_var(self.symbols, self.term_ptr.get_var_ptr().into())
+                .display_var(self.symbols, &self.term_ptr.get_var_ptr().into())
                 .fmt(f),
         }
     }
@@ -208,13 +208,13 @@ impl<'a, T: TermFamily> Display for CellDisplay<'a, T> {
 }
 
 pub struct VarDisplay<'a, T: TermFamily> {
-    var_ptr: VarPtr,
+    var_ptr: &'a VarPtr,
     symbols: &'a SymbolBook,
     heap: &'a Heap<T>,
 }
 impl<'a, T: TermFamily> Display for VarDisplay<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let var = self.heap.vars.get(&self.var_ptr.into()).unwrap();
+        let var = self.heap.vars.get(self.var_ptr).unwrap();
         T::display_store(f, self.symbols, self.heap, &var, self.var_ptr.get_index())
     }
 }
