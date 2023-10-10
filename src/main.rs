@@ -155,6 +155,8 @@ pub fn inet_main() {
     net.fib(16);
     info!("--- Fib(20) ---");
     net.fib(20);
+    info!("--- Fib(24) ---");
+    net.fib(24);
     // info!("--- Fib(28) ---");
     // net.fib(28);
     // // net.fib(32);

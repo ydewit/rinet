@@ -32,16 +32,16 @@ impl TermFamily for RuleF {
                 write!(f, "?{}", store)
             }
             Var::Free(RulePort::Ctr(PortNum::Zero)) => {
-                write!(f, "l₀")
+                write!(f, "C₀")
             }
             Var::Free(RulePort::Ctr(PortNum::One)) => {
-                write!(f, "l₁")
+                write!(f, "C₁")
             }
             Var::Free(RulePort::Fun(PortNum::Zero)) => {
-                write!(f, "r₀")
+                write!(f, "F₀")
             }
             Var::Free(RulePort::Fun(PortNum::One)) => {
-                write!(f, "r₁")
+                write!(f, "F₁")
             }
         }
     }
@@ -426,14 +426,14 @@ impl<'a> Display for RuleDisplay<'a> {
 
         match rule.fun_ptr.get_arity() {
             SymbolArity::Zero => write!(f, "{}", fun_name),
-            SymbolArity::One => write!(f, "({} l₀)", fun_name),
-            SymbolArity::Two => write!(f, "({} l₀ l₁)", fun_name),
+            SymbolArity::One => write!(f, "({} F₀)", fun_name),
+            SymbolArity::Two => write!(f, "({} F₀ F₁)", fun_name),
         }
         .and_then(|_| write!(f, " ⋈ "))
         .and_then(|_| match rule.ctr_ptr.get_arity() {
             SymbolArity::Zero => write!(f, "{}", ctr_name),
-            SymbolArity::One => write!(f, "({} r₀)", ctr_name),
-            SymbolArity::Two => write!(f, "({} r₀ r₁)", ctr_name),
+            SymbolArity::One => write!(f, "({} C₀)", ctr_name),
+            SymbolArity::Two => write!(f, "({} C₀ C₁)", ctr_name),
         })
         .and_then(|_| write!(f, "  ⟶  "))
         .and_then(|_| self.rules.display_body(&rule.body[..]).fmt(f))
