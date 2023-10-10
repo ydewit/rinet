@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{
-    arena::{Arena, ArenaPtr, ArenaValue},
+    arena::{ArenaPtr, ArenaValue},
     arenaraw::RawArena,
     rule::PortNum,
     symbol::{SymbolArity, SymbolPtr},

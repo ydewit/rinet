@@ -171,31 +171,3 @@ pub fn inet_main() {
     info!("{}", net);
     info!("Rewrites: {}", runtime.get_rewrites());
 }
-
-fn a() {
-    let mut value_a = None;
-    let mut value_b = None;
-    let mut value_c = None;
-    rayon::scope(|s| {
-        s.spawn(|s1| {
-            // ^ this is the same scope as `s`; this handle `s1`
-            //   is intended for use by the spawned task,
-            //   since scope handles cannot cross thread boundaries.
-
-            value_a = Some(22);
-            b(s1);
-        });
-
-        s.spawn(|_| {
-            value_c = Some(66);
-        });
-    });
-    assert_eq!(value_a, Some(22));
-    assert_eq!(value_b, Some(44));
-    assert_eq!(value_c, Some(66));
-}
-
-fn b(s1: &Scope) {
-    // the scope `s` will not end until all these tasks are done
-    s1.spawn(|_| {});
-}
