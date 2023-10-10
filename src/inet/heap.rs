@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use tracing::debug;
+
 use super::{
     cell::{Cell, CellPtr, Cells},
     symbol::{SymbolArity, SymbolBook, SymbolPtr},
@@ -33,17 +35,15 @@ impl<T: TermFamily> Heap<T> {
 
     pub fn cell0(&self, symbol_ptr: SymbolPtr) -> CellPtr {
         let cell0 = Cell::new0(symbol_ptr);
-        // print!("alloc {:?}[", &cell0);
-        let ptr = self.cells.alloc(cell0);
-        // println!("{}]", ptr.get_index());
+        let ptr = self.cells.alloc(cell0.clone());
+        tracing::trace!("[Len={}] Alloc CELLS[{}] = {:?}", self.cells.len(), ptr.get_index(), cell0);
         ptr
     }
 
     pub fn cell1(&self, symbol_ptr: SymbolPtr, left_port: TermPtr) -> CellPtr {
         let cell1 = Cell::new1(symbol_ptr, left_port);
-        // print!("alloc {:?}[", &cell1);
-        let ptr = self.cells.alloc(cell1);
-        // println!("{}]", ptr.get_index());
+        let ptr = self.cells.alloc(cell1.clone());
+        tracing::trace!("[Len={}] Alloc CELLS[{}] = {:?}", self.cells.len(), ptr.get_index(), cell1);
         ptr
     }
 
@@ -54,9 +54,8 @@ impl<T: TermFamily> Heap<T> {
         right_port: TermPtr,
     ) -> CellPtr {
         let cell2 = Cell::new2(symbol_ptr, left_port, right_port);
-        // print!("alloc {:?}[", &cell2);
-        let ptr = self.cells.alloc(cell2);
-        // println!("{}]", ptr.get_index());
+        let ptr = self.cells.alloc(cell2.clone());
+        tracing::trace!("[Len={}] Alloc CELLS[{}] = {:?}", self.cells.len(), ptr.get_index(), cell2);
         ptr
     }
 
@@ -68,20 +67,27 @@ impl<T: TermFamily> Heap<T> {
     //     self.cells.iter()
     // }
 
+    pub fn get_var<'a>(&'a self, var_ptr: &'a PVarPtr) -> &'a Var<T> {
+        self.vars.get(&var_ptr.into()).unwrap()
+    }
+
     pub fn free_cell(&self, cell_ptr: CellPtr) -> Cell<T> {
-        self.cells.free(cell_ptr)
+        let index = cell_ptr.get_index();
+        let cell = self.cells.free(cell_ptr);
+        tracing::trace!("[Len={}] Free CELLS[{}] = {:?}", self.cells.len(), index, cell);
+        cell
     }
 
     pub fn bvar(&self, store: T::BoundStore) -> VarPtr {
-        self.vars.alloc(Var::Bound(store))
+        let var_ptr = self.vars.alloc(Var::Bound(store));
+        tracing::trace!("[Len={}] Alloc VARS[{}] = BVar", self.vars.len(), var_ptr.get_index());
+        var_ptr
     }
 
     pub fn fvar(&self, store: T::FreeStore) -> VarPtr {
-        self.vars.alloc(Var::Free(store))
-    }
-
-    pub fn get_var<'a>(&'a self, var_ptr: &'a PVarPtr) -> &'a Var<T> {
-        self.vars.get(&var_ptr.into()).unwrap()
+        let var_ptr = self.vars.alloc(Var::Free(store));
+        tracing::trace!("[Len={}] Alloc VARS[{}] = FVar", self.vars.len(), var_ptr.get_index());
+        var_ptr
     }
 
     // pub fn vars(&self) -> ArenaPtrIter<Var<T>, VarPtr> {
@@ -89,7 +95,10 @@ impl<T: TermFamily> Heap<T> {
     // }
 
     pub fn free_var(&self, var_ptr: PVarPtr) -> Var<T> {
-        self.vars.free(var_ptr.into())
+        let index = var_ptr.get_fvar_ptr().get_index();
+        let var = self.vars.free(var_ptr.into());
+        tracing::trace!("[Len={}] Free VARS[{}] -> {:?}", self.vars.len(), index, var);
+        var
     }
 
     pub fn display<'a>(&'a self, symbols: &'a SymbolBook) -> HeapDisplay<T> {

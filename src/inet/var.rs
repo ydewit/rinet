@@ -1,7 +1,7 @@
 use std::fmt::{Binary, Debug, Formatter};
 
 use super::{
-    arena::{Arena, ArenaPtr, ArenaValue},
+    arena::{ArenaPtr, ArenaValue},
     arenaraw::RawArena,
     term::TermFamily,
     BitSet32, Polarity,

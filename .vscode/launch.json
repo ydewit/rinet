@@ -19,6 +19,10 @@
                     "kind": "bin"
                 }
             },
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RAYON_NUM_THREADS": "1"
+            },
             "args": [],
             "cwd": "${workspaceFolder}"
         },

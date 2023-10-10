@@ -508,6 +508,8 @@ impl Display for SymbolBook {
 
 #[cfg(test)]
 mod tests {
+    use tracing::debug;
+
     use super::*;
 
     #[test]
@@ -529,7 +531,7 @@ mod tests {
     #[test]
     fn test_symbol_new0_neg() {
         let sym = Symbol::new0(Polarity::Neg);
-        println!("{:0b}", sym.0);
+        debug!("{:0b}", sym.0);
         assert_eq!(sym.get_arity(), SymbolArity::Zero);
         assert_eq!(sym.get_polarity(), Polarity::Neg);
     }

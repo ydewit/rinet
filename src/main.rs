@@ -10,12 +10,15 @@ fn main() {
 }
 
 use rayon::Scope;
+use tracing::info;
 
 use crate::inet::{net::Net, rule::RuleSet, runtime::Runtime, symbol::SymbolBook};
 
 mod examples;
 
 pub fn inet_main() {
+    tracing_subscriber::fmt::init();
+
     // symbols
     let mut symbols = SymbolBook::new();
     symbols.declare_nat_symbols();
@@ -27,7 +30,7 @@ pub fn inet_main() {
     // let fib_sym = symbols.declare1("fib", Polarity::Neg, Polarity::Pos);
     // let fib0_sym = symbols.declare1("fib₀", Polarity::Neg, Polarity::Pos);
 
-    println!("{}", symbols);
+    info!("{}", symbols);
 
     // rules
     let mut rules = RuleSet::new(&symbols);
@@ -37,10 +40,7 @@ pub fn inet_main() {
     rules.define_combinator_rules();
     rules.fib_rules();
 
-    println!("{}", rules);
-    // println!("{:?}", rules);
-
-    println!();
+    info!("{}", rules);
 
     // net
     let mut net = Net::new(&symbols);
@@ -57,7 +57,7 @@ pub fn inet_main() {
     });
 
     // 1 + 2 = 3
-    println!("--- 1 + 2 = 3 ---");
+    info!("--- 1 + 2 = 3 ---");
     net.equations(|b| {
         let one = b.one();
         let r_fvar = b.output();
@@ -67,9 +67,9 @@ pub fn inet_main() {
         let two = b.two();
         b.add(two, adder);
     });
-    println!("--- ---");
 
     // 2 - 1 = 1
+    info!("--- 2 - 1 = 1 ---");
     net.equations(|b| {
         let result = b.output();
         let one = b.one();
@@ -80,6 +80,7 @@ pub fn inet_main() {
     });
 
     // 3 - 2 = 1
+    info!("--- 3 - 2 = 1 ---");
     net.equations(|b| {
         let result = b.output();
         let two = b.two();
@@ -91,6 +92,7 @@ pub fn inet_main() {
     });
 
     // 3 - 0 = 3
+    info!("--- 3 - 0 = 3 ---");
     net.equations(|b| {
         let result = b.output();
         let two = b.two();
@@ -102,6 +104,7 @@ pub fn inet_main() {
     });
 
     // 1 - 2 = 0
+    info!("--- 1 - 2 = 0 ---");
     net.equations(|b| {
         let result = b.output();
         let one = b.two();
@@ -112,6 +115,7 @@ pub fn inet_main() {
     });
 
     // Duplicate Z
+    info!("--- Duplicate Z ---");
     net.equations(|b| {
         let dup1 = b.output();
         let dup2 = b.output();
@@ -120,6 +124,7 @@ pub fn inet_main() {
     });
 
     // Duplicate One
+    info!("--- Duplicate One ---");
     net.equations(|b| {
         let dup1 = b.output();
         let dup2 = b.output();
@@ -128,6 +133,7 @@ pub fn inet_main() {
     });
 
     // Duplicate Two
+    info!("--- Duplicate Two ---");
     net.equations(|b| {
         let dup1 = b.output();
         let dup2 = b.output();
@@ -135,26 +141,33 @@ pub fn inet_main() {
         b.duplicate(two.into(), dup1.into(), dup2.into());
     });
 
+    info!("--- Fib(0) ---");
     net.fib(0);
+    info!("--- Fib(1) ---");
     net.fib(1);
+    info!("--- Fib(2) ---");
     net.fib(2);
+    info!("--- Fib(4) ---");
     net.fib(4);
+    info!("--- Fib(8) ---");
     net.fib(8);
+    info!("--- Fib(16) ---");
     net.fib(16);
-    net.fib(28);
-    // net.fib(32);
+    info!("--- Fib(20) ---");
+    net.fib(20);
+    // info!("--- Fib(28) ---");
+    // net.fib(28);
+    // // net.fib(32);
 
-    println!("{}", net);
+    info!("{}", net);
 
     let mut runtime = Runtime::new(&rules, false);
-
-    println!();
 
     // let net = runtime.run(net);
     let net = runtime.eval(net);
 
-    println!("{}", net);
-    println!();
+    info!("{}", net);
+    info!("Rewrites: {}", runtime.get_rewrites());
 }
 
 fn a() {

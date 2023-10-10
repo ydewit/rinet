@@ -4,16 +4,15 @@ use std::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
+use tracing::{debug, warn};
+
 use super::{
-    arena::ArenaPtrIter,
-    cell::{Cell, CellPtr},
-    equation::{
-        Equation, EquationBuilder, EquationDisplay, EquationPtr, Equations, EquationsDisplay,
-    },
-    heap::{CellDisplay, Heap},
+    cell::CellPtr,
+    equation::{Equation, EquationBuilder, EquationsDisplay},
+    heap::Heap,
     symbol::SymbolBook,
     term::TermFamily,
-    var::{PVarPtr, Var, VarPtr},
+    var::{PVarPtr, Var},
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -60,17 +59,21 @@ impl NetStore {
         let old_value = self.0.swap(cell_ptr.get_ptr(), Ordering::SeqCst);
         if old_value != Self::NULL {
             if old_value != cell_ptr.get_ptr() {
-                // println!("Swapping var value {:?} with {:?}", old_cell_ptr, self.get_cell_ptr());
+                debug!(
+                    "Swapping var value {:?} with {:?}",
+                    cell_ptr,
+                    self.get_cell_ptr()
+                );
                 (cell_ptr, Some(CellPtr::from(old_value)))
             } else {
-                println!(
+                warn!(
                     "WARN: Setting var with value {:?} twice?",
                     self.get_cell_ptr()
                 );
                 return (cell_ptr, None);
             }
         } else {
-            // println!("Setting var with value {:?}", self.get_cell_ptr());
+            debug!("Setting var with value {:?}", self.get_cell_ptr());
             return (cell_ptr, None);
         }
     }
@@ -139,73 +142,6 @@ impl<'a> Net<'a> {
         builder.build();
     }
 
-    // pub fn redex(&mut self, ctr_ptr: CellPtr, fun_ptr: CellPtr) {
-    //     self.body.push(Equation::redex(ctr_ptr, fun_ptr))
-    // }
-
-    // pub fn bind(&mut self, var_ptr: PVarPtr, fun_ptr: CellPtr) {
-    //     self.body.push(Equation::bind(var_ptr, fun_ptr))
-    // }
-
-    // pub fn connect(&mut self, left_ptr: PVarPtr, right_ptr: PVarPtr) {
-    //     self.body.push(Equation::connect(left_ptr, right_ptr))
-    // }
-
-    // pub fn body(&self) -> std::slice::Iter<Equation<NetF>>  {
-    //     self.body.iter()
-    // }
-
-    // pub fn get_body(&'a self, equation: EquationPtr) -> &'a Equation<NetF> {
-    //     self.body.get(equation).unwrap()
-    // }
-
-    // Cells --------------------------
-
-    // pub fn cells(&self) -> ArenaPtrIter<Cell<NetF>, CellPtr> {
-    //     self.heap.cells()
-    // }
-
-    // pub fn get_cell(&'a self, cell: &'a CellPtr) -> &'a Cell<NetF> {
-    //     self.heap.get_cell(cell)
-    // }
-
-    // pub fn free_cell(&mut self, cell_ptr: CellPtr) -> Cell<NetF> {
-    //     self.heap.free_cell(cell_ptr)
-    // }
-
-    // Vars --------------------------
-
-    // pub fn vars(&self) -> ArenaPtrIter<Var<NetF>, VarPtr> {
-    //     self.heap.vars()
-    // }
-
-    // pub fn get_vars(&'a self, ptr: &'a PVarPtr) -> &'a Var<NetF> {
-    //     self.heap.get_var(ptr.into())
-    // }
-
-    // pub fn input(&mut self) -> PVarPtr {
-    //     let fvar_ptr = self.heap.fvar(NetStore::default());
-    //     let (input_ptr, output_ptr) = PVarPtr::wire(fvar_ptr);
-    //     self.head.push(output_ptr);
-    //     input_ptr
-    // }
-
-    // pub fn output(&mut self) -> PVarPtr {
-    //     let fvar_ptr = self.heap.fvar(NetStore::default());
-    //     let (input_ptr, output_ptr) = PVarPtr::wire(fvar_ptr);
-    //     self.head.push(input_ptr);
-    //     output_ptr
-    // }
-
-    // pub fn wire(&mut self) -> (PVarPtr, PVarPtr) {
-    //     let bvar_ptr = self.heap.bvar(NetStore::default());
-    //     PVarPtr::wire(self.bvar())
-    // }
-
-    // pub fn bvar(&mut self) -> VarPtr {
-    //     self.heap.bvar(NetStore::default())
-    // }
-
     pub fn display_head(&'a self) -> HeadDisplay {
         HeadDisplay { net: self }
     }
@@ -217,22 +153,6 @@ impl<'a> Net<'a> {
             heap: &self.heap,
         }
     }
-
-    // pub fn display_equation(
-    //     &'a self,
-    //     symbols: &'a SymbolBook,
-    //     equation: &'a Equation<NetF>,
-    // ) -> EquationDisplay<'a, NetF> {
-    //     EquationDisplay {
-    //         equation,
-    //         symbols,
-    //         heap: &self.heap,
-    //     }
-    // }
-
-    // pub fn display_cell(&'a self, cell_ptr: &'a CellPtr) -> CellDisplay<'a, NetF> {
-    //     self.heap.display_cell(self.symbols, cell_ptr)
-    // }
 }
 
 impl<'a> Display for Net<'a> {
