@@ -110,6 +110,7 @@ impl<'a> Runtime<'a> {
             .unwrap();
         let rule = self.rules.get_rule(rule_ptr);
 
+        // track the number of rewrites (binds and connects are considered house keeping)
         self.rewrites.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         
         // info!("Rule: {}", rule.display(symbols, heap));

@@ -185,10 +185,13 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
 
     fn build(self) -> RulePtr {
         let rule_key = self.rule.get_key();
+
         let rule_ptr = self.rules.rules.alloc(self.rule);
+        // index the rule by symbol (always ordered)
         self.rules
             .rule_by_symbols
             .insert(rule_key, rule_ptr.get_index());
+
         rule_ptr
     }
 
@@ -421,16 +424,16 @@ impl<'a> Display for RuleDisplay<'a> {
         let ctr_name = self.rules.symbols.get_name(rule.ctr_ptr).unwrap();
         let fun_name = self.rules.symbols.get_name(rule.fun_ptr).unwrap();
 
-        match rule.ctr_ptr.get_arity() {
-            SymbolArity::Zero => write!(f, "{}", ctr_name),
-            SymbolArity::One => write!(f, "({} l₀)", ctr_name),
-            SymbolArity::Two => write!(f, "({} l₀ l₁)", ctr_name),
+        match rule.fun_ptr.get_arity() {
+            SymbolArity::Zero => write!(f, "{}", fun_name),
+            SymbolArity::One => write!(f, "({} l₀)", fun_name),
+            SymbolArity::Two => write!(f, "({} l₀ l₁)", fun_name),
         }
         .and_then(|_| write!(f, " ⋈ "))
-        .and_then(|_| match rule.fun_ptr.get_arity() {
-            SymbolArity::Zero => write!(f, "{}", fun_name),
-            SymbolArity::One => write!(f, "({} r₀)", fun_name),
-            SymbolArity::Two => write!(f, "({} r₀ r₁)", fun_name),
+        .and_then(|_| match rule.ctr_ptr.get_arity() {
+            SymbolArity::Zero => write!(f, "{}", ctr_name),
+            SymbolArity::One => write!(f, "({} r₀)", ctr_name),
+            SymbolArity::Two => write!(f, "({} r₀ r₁)", ctr_name),
         })
         .and_then(|_| write!(f, "  ⟶  "))
         .and_then(|_| self.rules.display_body(&rule.body[..]).fmt(f))
