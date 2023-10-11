@@ -22,6 +22,15 @@ pub enum EquationKind {
     Bind = 1,
     Connect = 2,
 }
+impl Display for EquationKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EquationKind::Redex => f.write_str("REDEX"),
+            EquationKind::Bind => f.write_str("BIND"),
+            EquationKind::Connect => f.write_str("CONNECT"),
+        }
+    }
+}
 
 impl From<u8> for EquationKind {
     fn from(value: u8) -> Self {
@@ -252,6 +261,15 @@ impl<T: TermFamily> Equation<T> {
         assert!(self.get_kind() == EquationKind::Connect);
         PVarPtr::from(self.get_right())
     }
+
+    pub fn display_equation<'a>(&'a self, symbols: &'a SymbolBook, heap: &'a Heap<T>) -> EquationDisplay<T> {
+        EquationDisplay {
+            equation: self,
+            symbols,
+            heap,
+        }
+    }
+
 }
 
 impl<T: TermFamily> ArenaValue<EquationPtr> for Equation<T> {
@@ -314,9 +332,9 @@ impl<'a, T: TermFamily> Display for EquationDisplay<'a, T> {
                     f,
                     "{} = {}",
                     self.heap
-                        .display_cell(self.symbols, &self.equation.get_redex_ctr()),
+                        .display_cell(self.symbols, self.equation.get_redex_fun()),
                     self.heap
-                        .display_cell(self.symbols, &self.equation.get_redex_fun())
+                        .display_cell(self.symbols, self.equation.get_redex_ctr())
                 )
             }
             EquationKind::Bind => {
@@ -324,9 +342,9 @@ impl<'a, T: TermFamily> Display for EquationDisplay<'a, T> {
                     f,
                     "{} ← {}",
                     self.heap
-                        .display_var(self.symbols, &self.equation.get_bind_var().get_fvar_ptr()),
+                        .display_var(self.symbols, self.equation.get_bind_var().get_fvar_ptr()),
                     self.heap
-                        .display_cell(self.symbols, &self.equation.get_bind_cell())
+                        .display_cell(self.symbols, self.equation.get_bind_cell())
                 )
             }
             EquationKind::Connect => {
@@ -334,9 +352,9 @@ impl<'a, T: TermFamily> Display for EquationDisplay<'a, T> {
                     f,
                     "{} ↔ {}",
                     self.heap
-                        .display_var(self.symbols, &self.equation.get_connect_left().get_fvar_ptr()),
+                        .display_var(self.symbols, self.equation.get_connect_left().get_fvar_ptr()),
                     self.heap
-                        .display_var(self.symbols, &self.equation.get_connect_right().get_fvar_ptr())
+                        .display_var(self.symbols, self.equation.get_connect_right().get_fvar_ptr())
                 )
             }
         }
@@ -434,7 +452,7 @@ impl<'a, F: TermFamily> EquationBuilder<'a, F> {
         assert!(right_port
             .get_polarity()
             .is_opposite(symbol.get_right_polarity()));
-        self.heap.cell2(&symbol_ptr, left_port, right_port)
+        self.heap.cell2(symbol_ptr, left_port, right_port)
     }
 
     // -------------------

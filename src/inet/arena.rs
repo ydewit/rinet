@@ -1,10 +1,10 @@
 use std::{fmt::Debug, marker::PhantomData};
 
-pub trait ArenaPtr: Debug {
+pub trait ArenaPtr: Debug  + Clone + Copy { 
     fn get_index(&self) -> usize;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct SimplePtr {
     pub(crate) index: usize,
 }

@@ -1,4 +1,4 @@
-use std::{thread, sync::atomic::AtomicUsize};
+use std::sync::atomic::AtomicUsize;
 
 use crate::inet::var::{PVarPtrBuffer, Var};
 
@@ -12,7 +12,7 @@ use super::{
     cell::{Cell, CellPtr},
     equation::{Equation, EquationKind},
     heap::Heap,
-    net::{Net, NetF, NetStore},
+    net::{Net, NetF, NetVar},
     rule::{RuleF, RulePort, RuleSet},
     symbol::{SymbolArity, SymbolBook},
     term::{TermKind, TermPtr},
@@ -20,20 +20,75 @@ use super::{
     Polarity,
 };
 
-#[derive (Debug)]
+#[derive(Debug)]
 pub struct Runtime<'a> {
     debug: bool,
     rules: &'a RuleSet<'a>,
-    rewrites: AtomicUsize
+    rewrites: AtomicUsize,
+    cell_instantiations: AtomicUsize,
+    cell_reuses: AtomicUsize,
+    var_instatiations: AtomicUsize,
 }
 
 impl<'a> Runtime<'a> {
     pub fn new(rules: &'a RuleSet, debug: bool) -> Self {
-        Self { rules, debug, rewrites: Default::default() }
+        Self {
+            rules,
+            debug,
+            rewrites: Default::default(),
+            cell_reuses: Default::default(),
+            cell_instantiations: Default::default(),
+            var_instatiations: Default::default(),
+        }
+    }
+
+    fn current_thread_id() -> usize {
+        rayon::current_thread_index().unwrap()
     }
 
     pub fn get_rewrites(&self) -> usize {
         self.rewrites.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn inc_rewrite(&self) {
+        self.rewrites
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn get_cell_reuses(&self) -> usize {
+        self.cell_reuses.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn inc_cell_reuse(&self) {
+        self.cell_reuses
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn get_cell_instantiations(&self) -> usize {
+        self.cell_instantiations
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn inc_cell_instantiation(&self) {
+        self.cell_instantiations
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn get_var_instantiations(&self) -> usize {
+        self.var_instatiations
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn inc_var_instantiation(&self) {
+        self.var_instatiations
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn display_stats(&self) {
+        tracing::info!("REWRITES: {}", self.get_rewrites());
+        tracing::info!("CELL REUSES: {}", self.get_cell_reuses());
+        tracing::info!("CELL INSTANTIATIONS: {}", self.get_cell_instantiations());
+        tracing::info!("VAR INSTANTIATIONS: {}", self.get_var_instantiations());
     }
 
     #[tracing::instrument]
@@ -53,6 +108,13 @@ impl<'a> Runtime<'a> {
         heap: &'scope Heap<NetF>,
         eqn: Equation<NetF>,
     ) {
+        debug!(
+            "[{}] Evaluating {}: {}",
+            Self::current_thread_id(),
+            eqn.get_kind(),
+            eqn.display_equation(symbols, heap)
+        );
+
         match eqn.get_kind() {
             EquationKind::Redex => self.eval_redex(
                 scope,
@@ -86,15 +148,13 @@ impl<'a> Runtime<'a> {
         ctr_ptr: CellPtr,
         fun_ptr: CellPtr,
     ) {
-        debug!(
-            "[{}] Evaluating REDEX: >>>>  {} = {}  <<<<",
-            rayon::current_thread_index().unwrap(),
-            heap.display_cell(symbols, &ctr_ptr),
-            heap.display_cell(symbols, &fun_ptr)
-        );
+        let mut reuse_cell_iter = std::iter::once(ctr_ptr).chain(std::iter::once(fun_ptr));
 
-        let ctr = heap.free_cell(ctr_ptr);
-        let fun = heap.free_cell(fun_ptr);
+        let ctr = heap.get_cell(ctr_ptr).clone(); // TODO move clone() to arenaraw?
+        let fun = heap.get_cell(fun_ptr).clone(); // TODO move clone() to arenaraw?
+
+        // let ctr = heap.free_cell(ctr_ptr);
+        // let fun = heap.free_cell(fun_ptr);
 
         // find rule
         let rule_ptr = self
@@ -111,8 +171,8 @@ impl<'a> Runtime<'a> {
         let rule = self.rules.get_rule(rule_ptr);
 
         // track the number of rewrites (binds and connects are considered house keeping)
-        self.rewrites.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        
+        self.inc_rewrite();
+
         // info!("Rule: {}", rule.display(symbols, heap));
         // preallocate bound vars (TODO can we allocate in consecutive indexes to simplify rewrite?)
         // let bvars = net.alloc_bvars(rule.get_bvar_count());
@@ -120,8 +180,22 @@ impl<'a> Runtime<'a> {
 
         // interpret rule
         for rule_eqn_ptr in rule.body() {
-            let rule_eqn = self.rules.get_equation(*rule_eqn_ptr).clone();
-            self.rewrite_equation(scope, symbols, heap, &mut bvars, ctr, fun, rule_eqn);
+            let rule_eqn = self.rules.get_equation(*rule_eqn_ptr);
+            //
+            self.rewrite_equation(
+                scope,
+                symbols,
+                heap,
+                &mut bvars,
+                ctr,
+                fun,
+                &mut reuse_cell_iter,
+                rule_eqn.clone(),
+            );
+        }
+
+        for reuse_cell in reuse_cell_iter {
+            heap.free_cell(reuse_cell);
         }
     }
 
@@ -133,7 +207,7 @@ impl<'a> Runtime<'a> {
         var_ptr: PVarPtr,
         cell_ptr: CellPtr,
     ) {
-        let var = heap.get_var(&var_ptr);
+        let var = heap.get_var(var_ptr.clone());
         match var.get_store().set_or_get(cell_ptr) {
             (cell_ptr, Some(other_cell_ptr)) => {
                 if var.is_bound() {
@@ -143,7 +217,8 @@ impl<'a> Runtime<'a> {
                 let (ctr_ptr, fun_ptr) =
                     self.order_ctr_fun(symbols, heap, cell_ptr, other_cell_ptr);
                 let this = self;
-                debug!("Got REDEX bind!!!!");
+
+                //
                 scope.spawn(move |scope| this.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
             }
             (_, None) => {
@@ -163,59 +238,44 @@ impl<'a> Runtime<'a> {
         if self.debug {
             debug!(
                 "[{:?}] Evaluating CONNECT: {} ↔ {}",
-                rayon::current_thread_index(),
-                heap.display_var(symbols, &left_var_ptr.get_fvar_ptr()),
-                heap.display_var(symbols, &right_var_ptr.get_fvar_ptr())
+                Self::current_thread_id(),
+                heap.display_var(symbols, left_var_ptr.get_fvar_ptr()),
+                heap.display_var(symbols, right_var_ptr.get_fvar_ptr())
             );
         }
 
-        let left_var = heap.get_var(&left_var_ptr);
-        let right_var = heap.get_var(&right_var_ptr);
+        let left_var = heap.get_var(left_var_ptr);
+        let right_var = heap.get_var(right_var_ptr);
 
         match (
             left_var.get_store().get_cell_ptr(),
             right_var.get_store().get_cell_ptr(),
         ) {
+            // both vars are set
             (Some(left_cell_ptr), Some(right_cell_ptr)) => {
                 let (left_cell_ptr, right_cell_ptr) =
                     self.order_ctr_fun(symbols, heap, left_cell_ptr, right_cell_ptr);
 
-                debug!("Got REDEX!!!");
-                scope.spawn(|scope| {
+                scope.spawn(move |scope| {
                     self.eval_redex(scope, symbols, heap, left_cell_ptr, right_cell_ptr)
                 });
             }
-            (None, Some(cell_ptr)) => {
-                // Some(Equation::bind(left_var_ptr, cell_ptr))
-                debug!(
-                    "[{:?}] TODO: wait on left var: {}",
-                    thread::current().id(),
-                    heap.display_var(symbols, &left_var_ptr.get_fvar_ptr())
-                );
-                // TODO can we wait on a condition instead??
-                scope.spawn(|scope| self.eval_bind(scope, symbols, heap, left_var_ptr, cell_ptr))
-            }
-            (Some(cell_ptr), None) => {
-                // Some(Equation::bind(right_var_ptr, cell_ptr))
-                debug!(
-                    "[{:?}] TODO: got left var: create bind: {}",
-                    thread::current().id(),
-                    heap.display_var(symbols, &right_var_ptr.get_fvar_ptr())
-                );
-                // TODO can we wait on a condition??
-                scope.spawn(|scope| self.eval_bind(scope, symbols, heap, right_var_ptr, cell_ptr))
-            }
+            // one var is set
+            (None, Some(cell_ptr)) => self.eval_bind(scope, symbols, heap, left_var_ptr, cell_ptr),
+            // one var is set
+            (Some(cell_ptr), None) => self.eval_bind(scope, symbols, heap, right_var_ptr, cell_ptr),
+            // none are set
             (None, None) => {
-                debug!(
+                tracing::warn!(
                     "[{:?}] TODO: got nothing: wait for vars {} and {}",
-                    thread::current().id(),
-                    heap.display_var(symbols, &left_var_ptr.get_fvar_ptr()),
-                    heap.display_var(symbols, &right_var_ptr.get_fvar_ptr())
+                    Self::current_thread_id(),
+                    heap.display_var(symbols, left_var_ptr.get_fvar_ptr()),
+                    heap.display_var(symbols, right_var_ptr.get_fvar_ptr())
                 );
-                // TODO can we wait on a condition??
-                scope.spawn(|scope| {
-                    self.eval_connect(scope, symbols, heap, left_var_ptr, right_var_ptr)
-                })
+                // // TODO can we wait on a condition??
+                // scope.spawn(move |scope| {
+                    // self.eval_connect(scope, symbols, heap, left_var_ptr, right_var_ptr)
+                // })
             }
         }
     }
@@ -228,6 +288,7 @@ impl<'a> Runtime<'a> {
         bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
+        reuse: &mut impl Iterator<Item = CellPtr>,
         rule_eqn: Equation<RuleF>,
     ) {
         match rule_eqn.get_kind() {
@@ -238,8 +299,9 @@ impl<'a> Runtime<'a> {
                 bvars,
                 ctr,
                 fun,
-                &rule_eqn.get_redex_ctr(),
-                &rule_eqn.get_redex_fun(),
+                rule_eqn.get_redex_ctr(),
+                rule_eqn.get_redex_fun(),
+                reuse,
             ),
             EquationKind::Bind => self.instantiate_bind(
                 scope,
@@ -248,8 +310,9 @@ impl<'a> Runtime<'a> {
                 bvars,
                 ctr,
                 fun,
-                &rule_eqn.get_bind_var(),
-                &rule_eqn.get_bind_cell(),
+                rule_eqn.get_bind_var(),
+                rule_eqn.get_bind_cell(),
+                reuse,
             ),
             EquationKind::Connect => self.instantiate_connect(
                 scope,
@@ -258,8 +321,8 @@ impl<'a> Runtime<'a> {
                 bvars,
                 ctr,
                 fun,
-                &rule_eqn.get_connect_left(),
-                &rule_eqn.get_connect_right(),
+                rule_eqn.get_connect_left(),
+                rule_eqn.get_connect_right(),
             ),
         }
     }
@@ -272,24 +335,14 @@ impl<'a> Runtime<'a> {
         bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
-        rule_ctr_ptr: &CellPtr,
-        rule_fun_ptr: &CellPtr,
+        rule_ctr_ptr: CellPtr,
+        rule_fun_ptr: CellPtr,
+        reuse: &mut impl Iterator<Item = CellPtr>,
     ) {
-        let ctr_ptr = self.instantiate_cell(symbols, heap, bvars, ctr, fun, rule_ctr_ptr);
-        let fun_ptr = self.instantiate_cell(symbols, heap, bvars, ctr, fun, rule_fun_ptr);
+        let ctr_ptr = self.instantiate_cell(symbols, heap, bvars, ctr, fun, rule_ctr_ptr, reuse);
+        let fun_ptr = self.instantiate_cell(symbols, heap, bvars, ctr, fun, rule_fun_ptr, reuse);
 
-        if self.debug {
-            debug!(
-                "[{:?}] Instantiate REDEX: {} = {}  ⟶  {} = {}",
-                thread::current().id(),
-                self.rules.display_cell(rule_ctr_ptr),
-                self.rules.display_cell(rule_fun_ptr),
-                heap.display_cell(symbols, &ctr_ptr),
-                heap.display_cell(symbols, &fun_ptr)
-            );
-        }
-
-        scope.spawn(|scope| self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
+        scope.spawn(move |scope| self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
     }
 
     fn instantiate_bind<'scope>(
@@ -300,74 +353,59 @@ impl<'a> Runtime<'a> {
         bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
-        rule_var_ptr: &PVarPtr,
-        rule_cell_ptr: &CellPtr,
+        rule_var_ptr: PVarPtr,
+        rule_cell_ptr: CellPtr,
+        reuse: &mut impl Iterator<Item = CellPtr>,
     ) {
-        let cell_ptr = self.instantiate_cell(symbols, heap, bvars, ctr, fun, rule_cell_ptr);
+        let cell_ptr = self.instantiate_cell(symbols, heap, bvars, ctr, fun, rule_cell_ptr, reuse);
         let term_ptr = self.instantiate_var(bvars, ctr, fun, rule_var_ptr);
 
         match term_ptr.get_kind() {
             TermKind::Cell => {
-                if self.debug {
-                    debug!(
-                        "[{:?}] Instantiate BIND: {} ← {}",
-                        thread::current().id(),
-                        self.rules.display_var(&rule_var_ptr.get_fvar_ptr()),
-                        self.rules.display_cell(rule_cell_ptr)
-                    );
-                }
-
                 let (ctr_ptr, fun_ptr) =
                     self.order_ctr_fun(symbols, heap, cell_ptr, term_ptr.get_cell_ptr());
 
-                if self.debug {
-                    debug!(
-                        "  ⟶  {} = {}",
-                        heap.display_cell(symbols, &ctr_ptr),
-                        heap.display_cell(symbols, &fun_ptr)
-                    );
-                }
+                debug!(
+                    "[{:?}] Instantiate REDEX from rule bind: {} ← {}  ⟶    {} = {}",
+                    Self::current_thread_id(),
+                    self.rules.display_var(rule_var_ptr.get_fvar_ptr()),
+                    self.rules.display_cell(rule_cell_ptr),
+                    heap.display_cell(symbols, ctr_ptr),
+                    heap.display_cell(symbols, fun_ptr),
+                );
 
-                scope.spawn(|scope| self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
+                scope.spawn(move |scope| self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
             }
             TermKind::Var => {
                 let pvar_ptr = term_ptr.get_var_ptr();
-                let var = heap.get_var(&pvar_ptr);
+                let var = heap.get_var(pvar_ptr);
                 match var.get_store().set_or_get(cell_ptr) {
                     (cell_ptr, Some(other_cell_ptr)) => {
-                        if self.debug {
-                            debug!(
-                                "[{:?}] Instantiate BIND: {}[{}] ← {}",
-                                thread::current().id(),
-                                self.rules.display_var(&rule_var_ptr.get_fvar_ptr()),
-                                heap.display_cell(symbols, &other_cell_ptr),
-                                self.rules.display_cell(rule_cell_ptr)
-                            );
-                        }
                         let (ctr_ptr, fun_ptr) =
                             self.order_ctr_fun(symbols, heap, cell_ptr, other_cell_ptr);
-                        if self.debug {
-                            debug!(
-                                "  ⟶  {} = {}",
-                                heap.display_cell(symbols, &ctr_ptr),
-                                heap.display_cell(symbols, &fun_ptr)
-                            );
-                        }
 
-                        scope
-                            .spawn(|scope| self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
+                        debug!(
+                            "[{:?}] Instantiate REDEX from rule bind: {} ← {}  ⟶    {} = {}",
+                            Self::current_thread_id(),
+                            self.rules.display_var(rule_var_ptr.get_fvar_ptr()),
+                            self.rules.display_cell(rule_cell_ptr),
+                            heap.display_cell(symbols, ctr_ptr),
+                            heap.display_cell(symbols, fun_ptr),
+                        );
+
+                        scope.spawn(move |scope| {
+                            self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr)
+                        });
                     }
                     (cell_ptr, None) => {
-                        if self.debug {
-                            debug!(
-                                "[{:?}] Instantiate BIND: {} ← {}  ⟶  {} ← {}",
-                                thread::current().id(),
-                                self.rules.display_var(&rule_var_ptr.get_fvar_ptr()),
-                                self.rules.display_cell(rule_cell_ptr),
-                                heap.display_var(symbols, &term_ptr.get_var_ptr().get_fvar_ptr()),
-                                heap.display_cell(symbols, &cell_ptr)
-                            );
-                        }
+                        debug!(
+                            "[{:?}] Instantiate BIND from rule bind: {} ← {}  ⟶    {} ← {}",
+                            Self::current_thread_id(),
+                            self.rules.display_var(rule_var_ptr.get_fvar_ptr()),
+                            self.rules.display_cell(rule_cell_ptr),
+                            heap.display_var(symbols, term_ptr.get_var_ptr().get_fvar_ptr()),
+                            heap.display_cell(symbols, cell_ptr),
+                        );
                         // value set, do nothing
                     }
                 }
@@ -383,20 +421,11 @@ impl<'a> Runtime<'a> {
         bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
-        rule_left_var: &PVarPtr,
-        rule_right_var: &PVarPtr,
+        rule_left_var: PVarPtr,
+        rule_right_var: PVarPtr,
     ) {
         let left_port_ptr = self.instantiate_var(bvars, ctr, fun, rule_left_var);
         let right_port_ptr = self.instantiate_var(bvars, ctr, fun, rule_right_var);
-
-        if self.debug {
-            debug!(
-                "[{:?}] Instantiate CONNECT: {} ↔ {}",
-                thread::current().id(),
-                self.rules.display_var(&rule_left_var.get_fvar_ptr()),
-                self.rules.display_var(&rule_right_var.get_fvar_ptr())
-            );
-        }
 
         match (left_port_ptr.get_kind(), right_port_ptr.get_kind()) {
             (TermKind::Cell, TermKind::Cell) => {
@@ -406,25 +435,27 @@ impl<'a> Runtime<'a> {
                     left_port_ptr.get_cell_ptr(),
                     right_port_ptr.get_cell_ptr(),
                 );
-                if self.debug {
-                    debug!(
-                        "  ⟶  {} = {}",
-                        heap.display_cell(symbols, &ctr_ptr),
-                        heap.display_cell(symbols, &fun_ptr)
-                    );
-                }
 
-                scope.spawn(|scope| self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
+                debug!(
+                    "[{:?}] Instantiate REDEX from rule connect: {} ← {}  ⟶    {} = {}",
+                    Self::current_thread_id(),
+                    self.rules.display_var(rule_left_var.get_fvar_ptr()),
+                    self.rules.display_var(rule_right_var.get_fvar_ptr()),
+                    heap.display_cell(symbols, fun_ptr),
+                    heap.display_cell(symbols, ctr_ptr)
+                );
+
+                scope.spawn(move |scope| self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
             }
             (TermKind::Cell, TermKind::Var) => {
-                // bind
-                if self.debug {
-                    debug!(
-                        "  ⟶  {} ← {}",
-                        heap.display_var(symbols, &right_port_ptr.get_var_ptr().get_fvar_ptr()),
-                        heap.display_cell(symbols, &left_port_ptr.get_cell_ptr())
-                    );
-                }
+                debug!(
+                    "[{:?}] Instantiate BIND from rule connect: {} ← {}  ⟶    {} ← {}",
+                    Self::current_thread_id(),
+                    self.rules.display_var(rule_left_var.get_fvar_ptr()),
+                    self.rules.display_var(rule_right_var.get_fvar_ptr()),
+                    heap.display_var(symbols, right_port_ptr.get_var_ptr().get_fvar_ptr()),
+                    heap.display_cell(symbols, left_port_ptr.get_cell_ptr())
+                );
 
                 scope.spawn(move |scope| {
                     self.eval_bind(
@@ -437,14 +468,14 @@ impl<'a> Runtime<'a> {
                 });
             }
             (TermKind::Var, TermKind::Cell) => {
-                // bind
-                if self.debug {
-                    debug!(
-                        "  ⟶  {} ← {}",
-                        heap.display_var(symbols, &left_port_ptr.get_var_ptr().get_fvar_ptr()),
-                        heap.display_cell(symbols, &right_port_ptr.get_cell_ptr())
-                    );
-                }
+                debug!(
+                    "[{:?}] Instantiate BIND from rule connect: {} ← {}  ⟶    {} ← {}",
+                    Self::current_thread_id(),
+                    self.rules.display_var(rule_left_var.get_fvar_ptr()),
+                    self.rules.display_var(rule_right_var.get_fvar_ptr()),
+                    heap.display_var(symbols, right_port_ptr.get_var_ptr().get_fvar_ptr()),
+                    heap.display_cell(symbols, left_port_ptr.get_cell_ptr())
+                );
 
                 scope.spawn(move |scope| {
                     self.eval_bind(
@@ -457,14 +488,14 @@ impl<'a> Runtime<'a> {
                 });
             }
             (TermKind::Var, TermKind::Var) => {
-                // connect
-                if self.debug {
-                    debug!(
-                        "  ⟶  {} ↔ {}",
-                        heap.display_var(symbols, &right_port_ptr.get_var_ptr().get_fvar_ptr()),
-                        heap.display_var(symbols, &right_port_ptr.get_var_ptr().get_fvar_ptr())
-                    );
-                }
+                debug!(
+                    "[{:?}] Instantiate CONNECT from rule connect: {} ← {}  ⟶    {} ↔ {}",
+                    Self::current_thread_id(),
+                    self.rules.display_var(rule_left_var.get_fvar_ptr()),
+                    self.rules.display_var(rule_right_var.get_fvar_ptr()),
+                    heap.display_var(symbols, left_port_ptr.get_var_ptr().get_fvar_ptr()),
+                    heap.display_var(symbols, right_port_ptr.get_var_ptr().get_fvar_ptr())
+                );
 
                 scope.spawn(move |scope| {
                     self.eval_connect(
@@ -486,11 +517,24 @@ impl<'a> Runtime<'a> {
         bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
-        rule_cell_ptr: &CellPtr,
+        rule_cell_ptr: CellPtr,
+        reuse: &mut impl Iterator<Item = CellPtr>,
     ) -> CellPtr {
         let rule_cell = self.rules.heap.get_cell(rule_cell_ptr);
         let cell_ptr = match rule_cell.get_symbol_ptr().get_arity() {
-            SymbolArity::Zero => heap.cell0(rule_cell.get_symbol_ptr()),
+            SymbolArity::Zero => {
+                // try to use a cell from the reuse buffer
+                match reuse.next() {
+                    Some(cell_ptr) => {
+                        self.inc_cell_reuse();
+                        heap.reuse_cell0(rule_cell.get_symbol_ptr(), cell_ptr)
+                    }
+                    None => {
+                        self.inc_cell_instantiation();
+                        heap.cell0(rule_cell.get_symbol_ptr())
+                    }
+                }
+            }
             SymbolArity::One => {
                 let term_ptr = self.instantiate_port(
                     symbols,
@@ -499,10 +543,20 @@ impl<'a> Runtime<'a> {
                     ctr,
                     fun,
                     rule_cell.get_left_port(),
+                    reuse,
                 );
-                let ptr = heap.cell1(rule_cell.get_symbol_ptr(), term_ptr);
-                ptr
 
+                // try to use a cell from the reuse buffer
+                match reuse.next() {
+                    Some(cell_ptr) => {
+                        self.inc_cell_reuse();
+                        heap.reuse_cell1(rule_cell.get_symbol_ptr(), term_ptr, cell_ptr)
+                    }
+                    None => {
+                        self.inc_cell_instantiation();
+                        heap.cell1(rule_cell.get_symbol_ptr(), term_ptr)
+                    }
+                }
             }
             SymbolArity::Two => {
                 let left_port_ptr = self.instantiate_port(
@@ -512,6 +566,7 @@ impl<'a> Runtime<'a> {
                     ctr,
                     fun,
                     rule_cell.get_left_port(),
+                    reuse,
                 );
                 let right_port_ptr = self.instantiate_port(
                     symbols,
@@ -520,12 +575,32 @@ impl<'a> Runtime<'a> {
                     ctr,
                     fun,
                     rule_cell.get_right_port(),
+                    reuse,
                 );
 
-                heap.cell2(&rule_cell.get_symbol_ptr(), left_port_ptr, right_port_ptr)
+                // try to use a cell from the reuse buffer
+                match reuse.next() {
+                    Some(cell_ptr) => {
+                        self.inc_cell_reuse();
+                        heap.reuse_cell2(
+                            rule_cell.get_symbol_ptr(),
+                            left_port_ptr,
+                            right_port_ptr,
+                            cell_ptr,
+                        )
+                    }
+                    None => {
+                        self.inc_cell_instantiation();
+                        heap.cell2(rule_cell.get_symbol_ptr(), left_port_ptr, right_port_ptr)
+                    }
+                }
             }
         };
-        debug!("[{}] Instantiate CELL: {:?}", rayon::current_thread_index().unwrap(), cell_ptr);
+        // debug!(
+        //     "[{}] Instantiate CELL: {:?}",
+        //     Self::current_thread_id(),
+        //     cell_ptr
+        // );
 
         cell_ptr
     }
@@ -538,22 +613,21 @@ impl<'a> Runtime<'a> {
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
         rule_port_ptr: TermPtr,
+        reuse: &mut impl Iterator<Item = CellPtr>,
     ) -> TermPtr {
         match rule_port_ptr.get_kind() {
-            TermKind::Cell => {
-                self.instantiate_cell(
+            TermKind::Cell => self
+                .instantiate_cell(
                     symbols,
                     heap,
                     bvars,
                     ctr,
                     fun,
-                    &rule_port_ptr.get_cell_ptr(),
+                    rule_port_ptr.get_cell_ptr(),
+                    reuse,
                 )
-                .into()
-            }
-            TermKind::Var => {
-                self.instantiate_var(bvars, ctr, fun, &rule_port_ptr.get_var_ptr())
-            }
+                .into(),
+            TermKind::Var => self.instantiate_var(bvars, ctr, fun, rule_port_ptr.get_var_ptr()),
         }
     }
 
@@ -562,30 +636,23 @@ impl<'a> Runtime<'a> {
         bvars: &mut PVarPtrBuffer,
         ctr: Cell<NetF>,
         fun: Cell<NetF>,
-        rule_var_ptr: &PVarPtr,
+        rule_var_ptr: PVarPtr,
     ) -> TermPtr {
+        self.inc_var_instantiation();
         let rule_var = self.rules.heap.get_var(rule_var_ptr.into());
         match rule_var {
-            Var::Bound(bvar_id) => {
-                let bvar = match rule_var_ptr.get_polarity() {
-                    Polarity::Pos => bvars.get_pos_var(*bvar_id).into(),
-                    Polarity::Neg => bvars.get_neg_var(*bvar_id).into(),
-                };
-                debug!("[{}] Instantiate Rule BVar {} -> {:?}", rayon::current_thread_index().unwrap(), bvar_id, bvar);
-                bvar
-            }
-            Var::Free(port) => {
-                let fvar = self.resolve_fvar(ctr, fun, port);
-                debug!("[{}] Instantiate Rule FVar {:?} -> {:?}", rayon::current_thread_index().unwrap(), port, fvar);
-                fvar
-            }
+            Var::Bound(bvar_id) => match rule_var_ptr.get_polarity() {
+                Polarity::Pos => bvars.get_pos_var(*bvar_id).into(),
+                Polarity::Neg => bvars.get_neg_var(*bvar_id).into(),
+            },
+            Var::Free(port) => self.resolve_fvar(ctr, fun, port.clone()),
         }
     }
 
-    fn resolve_fvar(&self, ctr: Cell<NetF>, fun: Cell<NetF>, port: &RulePort) -> TermPtr {
+    fn resolve_fvar(&self, ctr: Cell<NetF>, fun: Cell<NetF>, port: RulePort) -> TermPtr {
         match port {
-            RulePort::Ctr(port_num) => ctr.get_port(*port_num),
-            RulePort::Fun(port_num) => fun.get_port(*port_num),
+            RulePort::Ctr(port_num) => ctr.get_port(port_num),
+            RulePort::Fun(port_num) => fun.get_port(port_num),
         }
     }
 
@@ -601,15 +668,15 @@ impl<'a> Runtime<'a> {
             (Polarity::Neg, Polarity::Pos) => (right_ptr, left_ptr),
             (Polarity::Neg, Polarity::Neg) => panic!(
                 "Short-circuit (Neg x Neg): {} x {} ({:?} x {:?})",
-                heap.display_cell(symbols, &left_ptr),
-                heap.display_cell(symbols, &right_ptr),
+                heap.display_cell(symbols, left_ptr),
+                heap.display_cell(symbols, right_ptr),
                 left_ptr,
                 right_ptr
             ),
             (Polarity::Pos, Polarity::Pos) => panic!(
                 "Short-circuit (Pos x Pos): {} x {} ({:?} x {:?})",
-                heap.display_cell(symbols, &left_ptr),
-                heap.display_cell(symbols, &right_ptr),
+                heap.display_cell(symbols, left_ptr),
+                heap.display_cell(symbols, right_ptr),
                 left_ptr,
                 right_ptr
             ),
@@ -624,7 +691,7 @@ impl<'a> Runtime<'a> {
     ) -> PVarPtrBuffer {
         let mut buffer = PVarPtrBuffer::new(bvar_count);
         for i in 0..bvar_count {
-            buffer.set(i, heap.bvar(NetStore::default()))
+            buffer.set(i, heap.bvar(NetVar::default()))
         }
         buffer
     }

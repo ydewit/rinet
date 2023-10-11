@@ -88,8 +88,7 @@ impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
         FREE.with(|f| match f.borrow_mut().get_mut(&self.get_key()) {
             Some(free) => free.pop().map(|index| {
                 tracing::trace!(
-                    "[{:?}] Reusing arena({}) index: {} (len={})",
-                    rayon::current_thread_index(),
+                    "Reusing arena({}) index: {} (len={})",
                     self.get_key(),
                     index,
                     free.len()
@@ -110,8 +109,7 @@ impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
             None => {
                 let index = self.next.fetch_add(1, Ordering::SeqCst);
                 tracing::trace!(
-                    "[{:?}] Allocating new arena({}) index: {} (capacity={})",
-                    rayon::current_thread_index(),
+                    "Allocating new arena({}) index: {} (capacity={})",
                     self.get_key(),
                     index,
                     self.capacity()
@@ -124,6 +122,10 @@ impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
                 index
             }
         };
+        self.alloc_with_index(value, index)
+    }
+
+    pub(crate) fn alloc_with_index(&self, value: T, index: usize) -> P {
 
         let offset = index
             .checked_mul(std::mem::size_of::<ArenaEntry<T>>())
@@ -141,7 +143,7 @@ impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
         ptr
     }
 
-    pub fn get<'a>(&'a self, ptr: &P) -> Option<&'a T> {
+    pub fn get<'a>(&'a self, ptr: P) -> Option<&'a T> {
         assert!(
             ptr.get_index() < self.next(),
             "Ptr index is out of bounds (next={}): {:?}",
@@ -154,19 +156,19 @@ impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
         }
     }
 
-    pub fn set(&self, ptr: &P, new_value: T) -> T {
-        assert!(ptr.get_index() < self.len());
-        unsafe {
-            let mem_ptr = self.mem.as_ptr().add(ptr.get_index());
-            match mem_ptr.read() {
-                ArenaEntry::Occupied(value) => {
-                    mem_ptr.write(ArenaEntry::Occupied(new_value));
-                    value
-                }
-                ArenaEntry::Free(_) => unreachable!(),
-            }
-        }
-    }
+    // pub fn set(&self, ptr: P, new_value: T) -> T {
+    //     assert!(ptr.get_index() < self.len());
+    //     unsafe {
+    //         let mem_ptr = self.mem.as_ptr().add(ptr.get_index());
+    //         match mem_ptr.read() {
+    //             ArenaEntry::Occupied(value) => {
+    //                 mem_ptr.write(ArenaEntry::Occupied(new_value));
+    //                 value
+    //             }
+    //             ArenaEntry::Free(_) => unreachable!(),
+    //         }
+    //     }
+    // }
 
     pub fn free(&self, ptr: P) -> T {
         tracing::trace!("FREE: Arena {}, Ptr: {}", self.get_key(), ptr.get_index());
@@ -217,10 +219,10 @@ mod tests {
         assert_eq!(vec.len(), 0);
         let ptr = vec.alloc(6);
         assert_eq!(vec.len(), 1);
-        let old = vec.set(&ptr, 11);
+        // let old = vec.set(ptr, 11);
         assert_eq!(vec.len(), 1);
-        assert_eq!(vec.get(&ptr), Some(&11));
-        assert_eq!(Some(&old), Some(&6));
+        assert_eq!(vec.get(ptr), Some(&11));
+        // assert_eq!(Some(old), Some(6));
         assert_eq!(vec.free(ptr), 11);
         assert_eq!(vec.len(), 0);
     }

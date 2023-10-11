@@ -12,7 +12,7 @@ use super::{
     BitSet32, BitSet64, Polarity,
 };
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub struct CellPtr(u32);
 impl CellPtr {
     const INDEX: BitSet32<23> = BitSet32 {
@@ -68,6 +68,7 @@ impl CellPtr {
 }
 
 impl ArenaPtr for CellPtr {
+    #[inline]
     fn get_index(&self) -> usize {
         self.get_index()
     }
@@ -113,7 +114,7 @@ impl Debug for CellPtr {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone,Copy)]
 pub struct Cell<T: TermFamily>(u64, PhantomData<T>);
 impl<T: TermFamily> Cell<T> {
     const RIGHT_PORT: BitSet64<25> = BitSet64 {
@@ -129,12 +130,14 @@ impl<T: TermFamily> Cell<T> {
         offset: 50,
     };
 
+    #[inline]
     pub fn new0(symbol_ptr: SymbolPtr) -> Self {
         let mut cell = Self(0, PhantomData);
         cell.set_symbol_ptr(symbol_ptr);
         cell
     }
 
+    #[inline]
     pub fn new1(symbol_ptr: SymbolPtr, port: TermPtr) -> Self {
         let mut cell = Self(0, PhantomData);
         cell.set_symbol_ptr(symbol_ptr);
@@ -142,9 +145,10 @@ impl<T: TermFamily> Cell<T> {
         cell
     }
 
-    pub fn new2(symbol_ptr: &SymbolPtr, left_port: TermPtr, right_port: TermPtr) -> Self {
+    #[inline]
+    pub fn new2(symbol_ptr: SymbolPtr, left_port: TermPtr, right_port: TermPtr) -> Self {
         let mut cell = Self(0, PhantomData);
-        cell.set_symbol_ptr(*symbol_ptr);
+        cell.set_symbol_ptr(symbol_ptr);
         cell.set_port(PortNum::Zero, left_port);
         cell.set_port(PortNum::One, right_port);
         cell
@@ -209,6 +213,7 @@ impl<T: TermFamily> Cell<T> {
         self.0 = Self::RIGHT_PORT.set(self.0, port_bits as u64)
     }
 
+    #[inline]
     pub fn to_ptr(&self, index: usize) -> CellPtr {
         CellPtr::new(index, self.get_symbol_ptr().get_polarity())
     }

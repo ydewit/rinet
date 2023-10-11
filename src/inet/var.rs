@@ -7,6 +7,7 @@ use super::{
     BitSet32, Polarity,
 };
 
+#[derive(Clone,Copy)]
 pub struct PVarPtr(u32);
 impl PVarPtr {
     const POLARITY: BitSet32<1> = BitSet32 {
@@ -30,24 +31,29 @@ impl PVarPtr {
         pvar_ptr
     }
 
+    #[inline]
     pub fn wire(var_ptr: VarPtr) -> (PVarPtr, PVarPtr) {
         let in_ptr = Self::new(var_ptr, Polarity::Neg);
         let out_ptr = Self::new(var_ptr, Polarity::Pos);
         (in_ptr, out_ptr)
     }
 
+    #[inline]
     pub fn get_polarity(&self) -> Polarity {
         Polarity::from(Self::POLARITY.get(self.0))
     }
 
+    #[inline]
     fn set_polarity(&mut self, polarity: Polarity) {
         self.0 = Self::POLARITY.set(self.0, polarity as u32)
     }
 
+    #[inline]
     pub fn get_fvar_ptr(&self) -> VarPtr {
         VarPtr(Self::VAR_PTR.get(self.0))
     }
 
+    #[inline]
     pub fn get_ptr(&self) -> u32 {
         Self::PTR.get(self.0)
     }
@@ -91,6 +97,7 @@ pub struct PVarPtrBuffer {
 impl PVarPtrBuffer {
     const MAX_BUFFER_LEN: usize = 10;
 
+    #[inline]
     pub fn new(len: u8) -> Self {
         assert!(Self::MAX_BUFFER_LEN > len as usize);
         Self {
@@ -110,16 +117,19 @@ impl PVarPtrBuffer {
         }
     }
 
+    #[inline]
     pub fn set(&mut self, index: u8, var_ptr: VarPtr) {
         assert!(index < self.len);
         self.buffer[index as usize] = var_ptr;
     }
 
+    #[inline]
     pub fn get_neg_var(&self, index: u8) -> PVarPtr {
         assert!(index < self.len);
         PVarPtr::new(self.buffer[index as usize], Polarity::Neg)
     }
 
+    #[inline]
     pub fn get_pos_var(&self, index: u8) -> PVarPtr {
         assert!(index < self.len);
         PVarPtr::new(self.buffer[index as usize], Polarity::Pos)
@@ -128,7 +138,7 @@ impl PVarPtrBuffer {
 
 /// # VarPtr
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy)]
 pub struct VarPtr(u32);
 impl VarPtr {
     const INDEX: BitSet32<23> = BitSet32 {
@@ -169,6 +179,7 @@ impl VarPtr {
 }
 
 impl ArenaPtr for VarPtr {
+    #[inline]
     fn get_index(&self) -> usize {
         self.get_index()
     }
@@ -202,14 +213,17 @@ pub enum Var<T: TermFamily> {
 }
 
 impl<T: TermFamily> Var<T> {
+    #[inline]
     pub fn bvar(store: T::BoundStore) -> Self {
         Self::Bound(store)
     }
 
+    #[inline]
     pub fn fvar(store: T::FreeStore) -> Self {
         Self::Free(store)
     }
 
+    #[inline]
     pub fn is_bound(&self) -> bool {
         match self {
             Var::Bound(_) => true,
@@ -217,6 +231,7 @@ impl<T: TermFamily> Var<T> {
         }
     }
 
+    #[inline]
     pub fn is_free(&self) -> bool {
         match self {
             Var::Free(_) => true,
@@ -224,6 +239,7 @@ impl<T: TermFamily> Var<T> {
         }
     }
 
+    #[inline]
     pub fn to_ptr(&self, index: usize) -> VarPtr {
         VarPtr::new(index)
     }

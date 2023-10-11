@@ -254,7 +254,7 @@ impl<'a, 'b> RuleBuilder<'a, 'b> {
             "Short-circuit connecting right port for {}",
             self.rules.symbols.display_symbol(symbol_ptr)
         );
-        self.rules.heap.cell2(&symbol_ptr, left_port, right_port)
+        self.rules.heap.cell2(symbol_ptr, left_port, right_port)
     }
 
     /// ------------------------------------------------
@@ -388,11 +388,11 @@ impl<'a> RuleSet<'a> {
         RuleBodyDisplay { body, rules: self }
     }
 
-    pub fn display_cell(&'a self, cell_ptr: &'a CellPtr) -> CellDisplay<RuleF> {
+    pub fn display_cell(&'a self, cell_ptr: CellPtr) -> CellDisplay<RuleF> {
         self.heap.display_cell(self.symbols, cell_ptr)
     }
 
-    pub fn display_var(&'a self, var_ptr: &'a VarPtr) -> VarDisplay<RuleF> {
+    pub fn display_var(&'a self, var_ptr: VarPtr) -> VarDisplay<RuleF> {
         self.heap.display_var(self.symbols, var_ptr)
     }
 

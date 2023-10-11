@@ -18,8 +18,8 @@ use super::{
 #[derive(Debug, Copy, Clone)]
 pub struct NetF {}
 impl TermFamily for NetF {
-    type BoundStore = NetStore;
-    type FreeStore = NetStore;
+    type BoundStore = NetVar;
+    type FreeStore = NetVar;
 
     fn display_store(
         f: &mut std::fmt::Formatter<'_>,
@@ -41,9 +41,9 @@ impl TermFamily for NetF {
 }
 
 #[derive(Debug)]
-pub struct NetStore(AtomicU32);
+pub struct NetVar(AtomicU32);
 
-impl NetStore {
+impl NetVar {
     const NULL: u32 = u32::MAX;
 
     pub fn get_cell_ptr(&self) -> Option<CellPtr> {
@@ -59,11 +59,11 @@ impl NetStore {
         let old_value = self.0.swap(cell_ptr.get_ptr(), Ordering::SeqCst);
         if old_value != Self::NULL {
             if old_value != cell_ptr.get_ptr() {
-                debug!(
-                    "Swapping var value {:?} with {:?}",
-                    cell_ptr,
-                    self.get_cell_ptr()
-                );
+                // debug!(
+                //     "Swapping var value {:?} with {:?}",
+                //     cell_ptr,
+                //     self.get_cell_ptr()
+                // );
                 (cell_ptr, Some(CellPtr::from(old_value)))
             } else {
                 warn!(
@@ -73,20 +73,20 @@ impl NetStore {
                 return (cell_ptr, None);
             }
         } else {
-            debug!("Setting var with value {:?}", self.get_cell_ptr());
+            // debug!("Setting var with value {:?}", self.get_cell_ptr());
             return (cell_ptr, None);
         }
     }
 }
 
-impl Default for NetStore {
+impl Default for NetVar {
     fn default() -> Self {
         Self(AtomicU32::new(Self::NULL))
     }
 }
 
 impl Var<NetF> {
-    pub fn get_store(&self) -> &NetStore {
+    pub fn get_store(&self) -> &NetVar {
         match self {
             Var::Bound(store) => store,
             Var::Free(store) => store,
@@ -173,9 +173,9 @@ pub struct HeadDisplay<'a> {
 }
 impl<'a> Display for HeadDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.net.head.iter().fold(Ok(()), |result, fvar_ptr| {
+        self.net.head.iter().copied().fold(Ok(()), |result, fvar_ptr| {
             result.and_then(|_| {
-                let fvar = self.net.heap.get_var(&fvar_ptr);
+                let fvar = self.net.heap.get_var(fvar_ptr);
                 assert!(fvar.is_free());
                 match fvar {
                     Var::Bound(_) => unreachable!(),
@@ -184,7 +184,7 @@ impl<'a> Display for HeadDisplay<'a> {
                             f,
                             " _.{}={}",
                             fvar_ptr.get_fvar_ptr().get_index(),
-                            self.net.heap.display_cell(self.net.symbols, &cell_ptr)
+                            self.net.heap.display_cell(self.net.symbols, cell_ptr)
                         ),
                         None => write!(f, " _.{}", fvar_ptr.get_fvar_ptr().get_index()),
                     },

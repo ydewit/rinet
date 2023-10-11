@@ -9,7 +9,6 @@ fn main() {
     inet_main()
 }
 
-use rayon::Scope;
 use tracing::info;
 
 use crate::inet::{net::Net, rule::RuleSet, runtime::Runtime, symbol::SymbolBook};
@@ -159,15 +158,15 @@ pub fn inet_main() {
     net.fib(24);
     // info!("--- Fib(28) ---");
     // net.fib(28);
-    // // net.fib(32);
+    // net.fib(32);
 
-    info!("{}", net);
+    info!("Initial Net: {}", net);
 
-    let mut runtime = Runtime::new(&rules, false);
+    let runtime = Runtime::new(&rules, false);
 
     // let net = runtime.run(net);
     let net = runtime.eval(net);
 
     info!("{}", net);
-    info!("Rewrites: {}", runtime.get_rewrites());
+    runtime.display_stats();
 }
