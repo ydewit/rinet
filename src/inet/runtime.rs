@@ -269,12 +269,37 @@ impl<'a> Runtime<'a> {
                 let (left_cell_ptr, right_cell_ptr) =
                     self.order_ctr_fun(symbols, heap, left_cell_ptr, right_cell_ptr);
 
-                self.rewrite_redex(scope, symbols, heap, left_cell_ptr, right_cell_ptr)
+                self.rewrite_redex(scope, symbols, heap, left_cell_ptr, right_cell_ptr);
+
+                // free vars
+                if left_var.is_bound() {
+                    // cell communicated, free the bound var
+                    heap.free_var(left_var_ptr);
+                }
+                if right_var.is_bound() {
+                    // cell communicated, free the bound var
+                    heap.free_var(right_var_ptr);
+                }
             }
             // one var is set
-            (None, Some(cell_ptr)) => self.eval_bind(scope, symbols, heap, left_var_ptr, cell_ptr),
+            (None, Some(cell_ptr)) => {
+                if right_var.is_bound() {
+                    // cell communicated, free the bound var
+                    heap.free_var(right_var_ptr);
+                }
+
+                self.eval_bind(scope, symbols, heap, left_var_ptr, cell_ptr)
+            }
             // one var is set
-            (Some(cell_ptr), None) => self.eval_bind(scope, symbols, heap, right_var_ptr, cell_ptr),
+            (Some(cell_ptr), None) => {
+                // free vars
+                if left_var.is_bound() {
+                    // cell communicated, free the bound var
+                    heap.free_var(left_var_ptr);
+                }
+
+                self.eval_bind(scope, symbols, heap, right_var_ptr, cell_ptr);
+            }
             // none are set
             (None, None) => {
                 tracing::warn!(
@@ -401,6 +426,12 @@ impl<'a> Runtime<'a> {
                         );
 
                         self.rewrite_redex(scope, symbols, heap, ctr_ptr, fun_ptr);
+
+                        // free var
+                        if var.is_bound() {
+                            // cell communicated, free the bound var
+                            heap.free_var(pvar_ptr);
+                        }
                     }
                     (cell_ptr, None) => {
                         debug!(

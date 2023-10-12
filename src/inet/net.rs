@@ -32,7 +32,10 @@ impl TermFamily for NetF {
             Var::Bound(store) => match store.get_cell_ptr() {
                 // Some(cell_ptr) => write!(f, "x.{}[={}]", index, heap.display_cell(symbols, cell_ptr)),
                 // Some(cell_ptr) => write!(f, "{}", heap.display_cell(symbols, cell_ptr)),
-                Some(cell_ptr) => write!(f, "x.{}", index),
+                Some(cell_ptr) => {
+                    write!(f, "x.{}=...", index)
+                    // heap.display_cell(symbols, cell_ptr).fmt(f)
+                },
                 None => write!(f, "x.{}", index),
             },
             Var::Free(_) => write!(f, "_.{}", index),
