@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicUsize;
+use std::{sync::atomic::AtomicUsize, time::Instant};
 
 use crate::inet::var::{PVarPtrBuffer, Var};
 
@@ -6,7 +6,7 @@ use rayon::{
     prelude::{ParallelDrainRange, ParallelIterator},
     Scope,
 };
-use tracing::debug;
+use tracing::{debug, info};
 
 use super::{
     cell::{Cell, CellPtr},
@@ -91,13 +91,16 @@ impl<'a> Runtime<'a> {
         tracing::info!("VAR INSTANTIATIONS: {}", self.get_var_instantiations());
     }
 
-    #[tracing::instrument]
     pub fn eval(&self, mut net: Net<'a>) -> Net<'a> {
+        let now = Instant::now();
+
         rayon::scope(|scope| {
             net.body
-                .par_drain(..)
+                .drain(..)
                 .for_each(|eqn| self.eval_equation(scope, &net.symbols, &net.heap, eqn));
         });
+
+        info!("Net evaluated in {}", now.elapsed().as_millis());
         net
     }
 
@@ -116,7 +119,7 @@ impl<'a> Runtime<'a> {
         );
 
         match eqn.get_kind() {
-            EquationKind::Redex => self.eval_redex(
+            EquationKind::Redex => self.rewrite_redex(
                 scope,
                 symbols,
                 heap,
@@ -138,6 +141,18 @@ impl<'a> Runtime<'a> {
                 eqn.get_connect_right(),
             ),
         }
+    }
+
+    #[inline]
+    fn rewrite_redex<'scope>(
+        &'scope self,
+        scope: &Scope<'scope>,
+        symbols: &'scope SymbolBook,
+        heap: &'scope Heap<NetF>,
+        ctr_ptr: CellPtr,
+        fun_ptr: CellPtr,
+    ) {
+        scope.spawn(move |scope| self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
     }
 
     fn eval_redex<'scope>(
@@ -182,7 +197,7 @@ impl<'a> Runtime<'a> {
         for rule_eqn_ptr in rule.body() {
             let rule_eqn = self.rules.get_equation(*rule_eqn_ptr);
             //
-            self.rewrite_equation(
+            self.instantiate_equation(
                 scope,
                 symbols,
                 heap,
@@ -216,10 +231,8 @@ impl<'a> Runtime<'a> {
                 }
                 let (ctr_ptr, fun_ptr) =
                     self.order_ctr_fun(symbols, heap, cell_ptr, other_cell_ptr);
-                let this = self;
 
-                //
-                scope.spawn(move |scope| this.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
+                self.rewrite_redex(scope, symbols, heap, ctr_ptr, fun_ptr);
             }
             (_, None) => {
                 // value set
@@ -256,9 +269,7 @@ impl<'a> Runtime<'a> {
                 let (left_cell_ptr, right_cell_ptr) =
                     self.order_ctr_fun(symbols, heap, left_cell_ptr, right_cell_ptr);
 
-                scope.spawn(move |scope| {
-                    self.eval_redex(scope, symbols, heap, left_cell_ptr, right_cell_ptr)
-                });
+                self.rewrite_redex(scope, symbols, heap, left_cell_ptr, right_cell_ptr)
             }
             // one var is set
             (None, Some(cell_ptr)) => self.eval_bind(scope, symbols, heap, left_var_ptr, cell_ptr),
@@ -272,15 +283,11 @@ impl<'a> Runtime<'a> {
                     heap.display_var(symbols, left_var_ptr.get_fvar_ptr()),
                     heap.display_var(symbols, right_var_ptr.get_fvar_ptr())
                 );
-                // // TODO can we wait on a condition??
-                // scope.spawn(move |scope| {
-                    // self.eval_connect(scope, symbols, heap, left_var_ptr, right_var_ptr)
-                // })
             }
         }
     }
 
-    fn rewrite_equation<'scope>(
+    fn instantiate_equation<'scope>(
         &'scope self,
         scope: &Scope<'scope>,
         symbols: &'scope SymbolBook,
@@ -342,7 +349,7 @@ impl<'a> Runtime<'a> {
         let ctr_ptr = self.instantiate_cell(symbols, heap, bvars, ctr, fun, rule_ctr_ptr, reuse);
         let fun_ptr = self.instantiate_cell(symbols, heap, bvars, ctr, fun, rule_fun_ptr, reuse);
 
-        scope.spawn(move |scope| self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
+        self.rewrite_redex(scope, symbols, heap, ctr_ptr, fun_ptr);
     }
 
     fn instantiate_bind<'scope>(
@@ -374,7 +381,7 @@ impl<'a> Runtime<'a> {
                     heap.display_cell(symbols, fun_ptr),
                 );
 
-                scope.spawn(move |scope| self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
+                self.rewrite_redex(scope, symbols, heap, ctr_ptr, fun_ptr);
             }
             TermKind::Var => {
                 let pvar_ptr = term_ptr.get_var_ptr();
@@ -393,9 +400,7 @@ impl<'a> Runtime<'a> {
                             heap.display_cell(symbols, fun_ptr),
                         );
 
-                        scope.spawn(move |scope| {
-                            self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr)
-                        });
+                        self.rewrite_redex(scope, symbols, heap, ctr_ptr, fun_ptr);
                     }
                     (cell_ptr, None) => {
                         debug!(
@@ -445,7 +450,7 @@ impl<'a> Runtime<'a> {
                     heap.display_cell(symbols, ctr_ptr)
                 );
 
-                scope.spawn(move |scope| self.eval_redex(scope, symbols, heap, ctr_ptr, fun_ptr));
+                self.rewrite_redex(scope, symbols, heap, ctr_ptr, fun_ptr);
             }
             (TermKind::Cell, TermKind::Var) => {
                 debug!(
@@ -457,15 +462,13 @@ impl<'a> Runtime<'a> {
                     heap.display_cell(symbols, left_port_ptr.get_cell_ptr())
                 );
 
-                scope.spawn(move |scope| {
-                    self.eval_bind(
-                        scope,
-                        symbols,
-                        heap,
-                        right_port_ptr.get_var_ptr().into(),
-                        left_port_ptr.get_cell_ptr(),
-                    )
-                });
+                self.eval_bind(
+                    scope,
+                    symbols,
+                    heap,
+                    right_port_ptr.get_var_ptr().into(),
+                    left_port_ptr.get_cell_ptr(),
+                )
             }
             (TermKind::Var, TermKind::Cell) => {
                 debug!(
@@ -477,15 +480,13 @@ impl<'a> Runtime<'a> {
                     heap.display_cell(symbols, left_port_ptr.get_cell_ptr())
                 );
 
-                scope.spawn(move |scope| {
-                    self.eval_bind(
-                        scope,
-                        symbols,
-                        heap,
-                        left_port_ptr.get_var_ptr().into(),
-                        right_port_ptr.get_cell_ptr(),
-                    )
-                });
+                self.eval_bind(
+                    scope,
+                    symbols,
+                    heap,
+                    left_port_ptr.get_var_ptr().into(),
+                    right_port_ptr.get_cell_ptr(),
+                )
             }
             (TermKind::Var, TermKind::Var) => {
                 debug!(
@@ -497,15 +498,13 @@ impl<'a> Runtime<'a> {
                     heap.display_var(symbols, right_port_ptr.get_var_ptr().get_fvar_ptr())
                 );
 
-                scope.spawn(move |scope| {
-                    self.eval_connect(
-                        scope,
-                        symbols,
-                        heap,
-                        left_port_ptr.get_var_ptr(),
-                        right_port_ptr.get_var_ptr(),
-                    )
-                });
+                self.eval_connect(
+                    scope,
+                    symbols,
+                    heap,
+                    left_port_ptr.get_var_ptr(),
+                    right_port_ptr.get_var_ptr(),
+                )
             }
         }
     }
