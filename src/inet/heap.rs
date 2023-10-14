@@ -53,7 +53,7 @@ impl<T: TermFamily> Heap<T> {
             ptr.get_index(),
             cell0
         );
-        self.cells.alloc_with_index(cell0.clone(), ptr.get_index())
+        self.cells.alloc_with_ptr(cell0.clone(), ptr)
     }
 
     pub fn cell1(&self, symbol_ptr: SymbolPtr, left_port: TermPtr) -> CellPtr {
@@ -76,7 +76,7 @@ impl<T: TermFamily> Heap<T> {
             ptr.get_index(),
             cell1
         );
-        self.cells.alloc_with_index(cell1, ptr.get_index())
+        self.cells.alloc_with_ptr(cell1, ptr)
     }
 
     pub fn cell2(&self, symbol_ptr: SymbolPtr, left_port: TermPtr, right_port: TermPtr) -> CellPtr {
@@ -105,7 +105,7 @@ impl<T: TermFamily> Heap<T> {
             ptr.get_index(),
             &cell2
         );
-        self.cells.alloc_with_index(cell2, ptr.get_index())
+        self.cells.alloc_with_ptr(cell2, ptr)
     }
 
     pub fn get_cell<'a>(&'a self, cell_ptr: CellPtr) -> &'a Cell<T> {
@@ -199,11 +199,7 @@ impl<T: TermFamily> Heap<T> {
         }
     }
 
-    pub fn display_var<'a>(
-        &'a self,
-        symbols: &'a SymbolBook,
-        var_ptr: VarPtr,
-    ) -> VarDisplay<T> {
+    pub fn display_var<'a>(&'a self, symbols: &'a SymbolBook, var_ptr: VarPtr) -> VarDisplay<T> {
         VarDisplay {
             var_ptr,
             symbols: symbols,

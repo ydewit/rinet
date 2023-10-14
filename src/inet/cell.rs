@@ -3,9 +3,9 @@ use std::{
     marker::PhantomData,
 };
 
+use raw_arena::{arenaraw::RawArena, ArenaValue, Ptr};
+
 use super::{
-    arena::{ArenaPtr, ArenaValue},
-    arenaraw::RawArena,
     rule::PortNum,
     symbol::{SymbolArity, SymbolPtr},
     term::{TermFamily, TermPtr},
@@ -67,7 +67,7 @@ impl CellPtr {
     }
 }
 
-impl ArenaPtr for CellPtr {
+impl Ptr for CellPtr {
     #[inline]
     fn get_index(&self) -> usize {
         self.get_index()
@@ -114,7 +114,7 @@ impl Debug for CellPtr {
     }
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy)]
 pub struct Cell<T: TermFamily>(u64, PhantomData<T>);
 impl<T: TermFamily> Cell<T> {
     const RIGHT_PORT: BitSet64<25> = BitSet64 {

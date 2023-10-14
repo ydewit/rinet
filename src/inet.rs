@@ -3,15 +3,12 @@ use std::{
     ops::{BitAnd, BitOr, Shl, Shr},
 };
 
-pub mod arena;
-pub mod arenaraw;
 pub mod cell;
 pub mod equation;
 pub mod heap;
 pub mod net;
 pub mod rule;
 pub mod runtime;
-// pub mod runtime2;
 pub mod symbol;
 pub mod term;
 pub mod util;

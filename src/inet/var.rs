@@ -1,8 +1,8 @@
 use std::fmt::{Binary, Debug, Formatter};
 
+use raw_arena::{Ptr, ArenaValue, arenaraw::RawArena};
+
 use super::{
-    arena::{ArenaPtr, ArenaValue},
-    arenaraw::RawArena,
     term::TermFamily,
     BitSet32, Polarity,
 };
@@ -178,7 +178,7 @@ impl VarPtr {
     }
 }
 
-impl ArenaPtr for VarPtr {
+impl Ptr for VarPtr {
     #[inline]
     fn get_index(&self) -> usize {
         self.get_index()

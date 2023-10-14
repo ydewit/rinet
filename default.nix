@@ -11,6 +11,8 @@ pkgs.mkShell {
   ];
   packages = [ 
     pkgs.rustup
+    pkgs.linuxKernel.packages.linux_6_1.perf
+    pkgs.hotspot
   ];
   RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
 }

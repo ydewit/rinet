@@ -35,7 +35,7 @@ impl TermFamily for NetF {
                 Some(cell_ptr) => {
                     write!(f, "x.{}=...", index)
                     // heap.display_cell(symbols, cell_ptr).fmt(f)
-                },
+                }
                 None => write!(f, "x.{}", index),
             },
             Var::Free(_) => write!(f, "_.{}", index),
@@ -176,23 +176,27 @@ pub struct HeadDisplay<'a> {
 }
 impl<'a> Display for HeadDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.net.head.iter().copied().fold(Ok(()), |result, fvar_ptr| {
-            result.and_then(|_| {
-                let fvar = self.net.heap.get_var(fvar_ptr);
-                assert!(fvar.is_free());
-                match fvar {
-                    Var::Bound(_) => unreachable!(),
-                    Var::Free(store) => match store.get_cell_ptr() {
-                        Some(cell_ptr) => write!(
-                            f,
-                            " _.{}={}",
-                            fvar_ptr.get_fvar_ptr().get_index(),
-                            self.net.heap.display_cell(self.net.symbols, cell_ptr)
-                        ),
-                        None => write!(f, " _.{}", fvar_ptr.get_fvar_ptr().get_index()),
-                    },
-                }
+        self.net
+            .head
+            .iter()
+            .copied()
+            .fold(Ok(()), |result, fvar_ptr| {
+                result.and_then(|_| {
+                    let fvar = self.net.heap.get_var(fvar_ptr);
+                    assert!(fvar.is_free());
+                    match fvar {
+                        Var::Bound(_) => unreachable!(),
+                        Var::Free(store) => match store.get_cell_ptr() {
+                            Some(cell_ptr) => write!(
+                                f,
+                                " _.{}={}",
+                                fvar_ptr.get_fvar_ptr().get_index(),
+                                self.net.heap.display_cell(self.net.symbols, cell_ptr)
+                            ),
+                            None => write!(f, " _.{}", fvar_ptr.get_fvar_ptr().get_index()),
+                        },
+                    }
+                })
             })
-        })
     }
 }

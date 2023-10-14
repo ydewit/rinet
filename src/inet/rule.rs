@@ -3,8 +3,9 @@ use std::{
     fmt::{Debug, Display, Formatter},
 };
 
+use raw_arena::{Ptr, ArenaValue, arenaraw::RawArena};
+
 use super::{
-    arena::{Arena, ArenaPtr, ArenaValue},
     cell::CellPtr,
     equation::{Equation, EquationDisplay, EquationPtr, Equations},
     heap::{CellDisplay, Heap, VarDisplay},
@@ -103,7 +104,7 @@ impl RulePtr {
     }
 }
 
-impl ArenaPtr for RulePtr {
+impl Ptr for RulePtr {
     fn get_index(&self) -> usize {
         self.get_index()
     }
@@ -162,7 +163,7 @@ impl ArenaValue<RulePtr> for Rule {
     }
 }
 
-pub type Rules = Arena<Rule, RulePtr>;
+pub type Rules = RawArena<Rule, RulePtr>;
 
 pub struct RuleBuilder<'a, 'b> {
     rules: &'b mut RuleSet<'a>,

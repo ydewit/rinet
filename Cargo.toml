@@ -9,8 +9,14 @@ authors = ["Yuri de Wit <ydewit@gmail.com>"]
 # keywords = [..]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[workspace]
+members = [
+  "finally",
+  "raw-arena"
+]
 
 [dependencies]
 rayon = "1.6"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+raw-arena = { path = "./raw-arena" }

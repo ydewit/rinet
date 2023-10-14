@@ -3,10 +3,11 @@ use std::{
     marker::PhantomData,
 };
 
+use raw_arena::{arenaraw::RawArena, ArenaValue, Ptr};
+
 use crate::inet::Polarity;
 
 use super::{
-    arena::{Arena, ArenaPtr, ArenaValue},
     cell::CellPtr,
     heap::Heap,
     net::NetF,
@@ -128,7 +129,7 @@ impl EquationPtr {
     }
 }
 
-impl ArenaPtr for EquationPtr {
+impl Ptr for EquationPtr {
     fn get_index(&self) -> usize {
         self.get_index()
     }
@@ -262,14 +263,17 @@ impl<T: TermFamily> Equation<T> {
         PVarPtr::from(self.get_right())
     }
 
-    pub fn display_equation<'a>(&'a self, symbols: &'a SymbolBook, heap: &'a Heap<T>) -> EquationDisplay<T> {
+    pub fn display_equation<'a>(
+        &'a self,
+        symbols: &'a SymbolBook,
+        heap: &'a Heap<T>,
+    ) -> EquationDisplay<T> {
         EquationDisplay {
             equation: self,
             symbols,
             heap,
         }
     }
-
 }
 
 impl<T: TermFamily> ArenaValue<EquationPtr> for Equation<T> {
@@ -351,17 +355,21 @@ impl<'a, T: TermFamily> Display for EquationDisplay<'a, T> {
                 write!(
                     f,
                     "{} ↔ {}",
-                    self.heap
-                        .display_var(self.symbols, self.equation.get_connect_left().get_fvar_ptr()),
-                    self.heap
-                        .display_var(self.symbols, self.equation.get_connect_right().get_fvar_ptr())
+                    self.heap.display_var(
+                        self.symbols,
+                        self.equation.get_connect_left().get_fvar_ptr()
+                    ),
+                    self.heap.display_var(
+                        self.symbols,
+                        self.equation.get_connect_right().get_fvar_ptr()
+                    )
                 )
             }
         }
     }
 }
 
-pub type Equations<T> = Arena<Equation<T>, EquationPtr>;
+pub type Equations<T> = RawArena<Equation<T>, EquationPtr>;
 
 pub struct EquationsDisplay<'a, T: TermFamily> {
     pub symbols: &'a SymbolBook,

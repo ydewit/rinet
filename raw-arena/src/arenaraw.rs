@@ -1,12 +1,13 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{alloc::Layout, ptr::NonNull};
 
 use std::alloc;
 
-use super::arena::{ArenaEntry, ArenaPtr, ArenaValue, SimplePtr};
+use crate::{ArenaValue, Ptr};
 
 const FREE_SIZE: usize = 1 << 24; // 16,777,216
 
@@ -14,11 +15,28 @@ thread_local! {
     static FREE: RefCell<HashMap<usize, Vec<usize>>> = RefCell::new(Default::default());
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ArenaPtr {
+    pub(crate) index: usize,
+}
+impl Ptr for ArenaPtr {
+    #[no_mangle]
+    fn get_index(&self) -> usize {
+        self.index
+    }
+}
+
+#[derive(Debug)]
+pub enum ArenaEntry<T: Debug> {
+    Occupied(T),
+    Free(usize),
+}
+
 /// An implementation of Arena that does not use Vec as the underlying storage
 /// because we want to allow cross-thread references and mutable references
 /// (INets are linear after all so we dont need the compiler to save us from ourselves)
 #[derive(Debug)]
-pub struct RawArena<T: ArenaValue<P>, P: ArenaPtr = SimplePtr> {
+pub struct RawArena<T: ArenaValue<P>, P: Ptr = ArenaPtr> {
     mem: NonNull<ArenaEntry<T>>, // raw mutable pointer, non-zero, and covariant (?)
     len: AtomicUsize,
     next: AtomicUsize,
@@ -28,10 +46,10 @@ pub struct RawArena<T: ArenaValue<P>, P: ArenaPtr = SimplePtr> {
 }
 
 // safe to send to other threads
-unsafe impl<T: ArenaValue<P>, P: ArenaPtr> Send for RawArena<T, P> {}
-unsafe impl<T: ArenaValue<P>, P: ArenaPtr> Sync for RawArena<T, P> {}
+unsafe impl<T: ArenaValue<P>, P: Ptr> Send for RawArena<T, P> {}
+unsafe impl<T: ArenaValue<P>, P: Ptr> Sync for RawArena<T, P> {}
 
-impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
+impl<T: ArenaValue<P>, P: Ptr> RawArena<T, P> {
     pub fn new() -> Self {
         Self::with_capacity(FREE_SIZE)
     }
@@ -62,7 +80,7 @@ impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
     }
 
     #[inline]
-    fn next(&self) -> usize {
+    fn inc_next(&self) -> usize {
         self.next.fetch_add(1, Ordering::SeqCst)
     }
 
@@ -103,7 +121,7 @@ impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
         tracing::trace!("ALLOC: Arena {}, Len: {}", self.get_key(), self.len());
         let index = match self.pop_free_index() {
             Some(index) => {
-                assert!(index < self.next());
+                assert!(index < self.inc_next());
                 index
             }
             None => {
@@ -125,8 +143,11 @@ impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
         self.alloc_with_index(value, index)
     }
 
-    pub(crate) fn alloc_with_index(&self, value: T, index: usize) -> P {
+    pub fn alloc_with_ptr(&self, value: T, ptr: impl Ptr) -> P {
+        self.alloc_with_index(value, ptr.get_index())
+    }
 
+    fn alloc_with_index(&self, value: T, index: usize) -> P {
         let offset = index
             .checked_mul(std::mem::size_of::<ArenaEntry<T>>())
             .expect("Cannot reach memory location");
@@ -135,7 +156,7 @@ impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
 
         // increment total allocated
         self.len.fetch_add(1, Ordering::SeqCst);
-        
+
         let ptr = value.to_ptr(index);
         tracing::trace!("Alloc[{:?}]: {:?}", &ptr, &value);
         let entry = ArenaEntry::Occupied(value);
@@ -145,15 +166,20 @@ impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
 
     pub fn get<'a>(&'a self, ptr: P) -> Option<&'a T> {
         assert!(
-            ptr.get_index() < self.next(),
+            ptr.get_index() < self.inc_next(),
             "Ptr index is out of bounds (next={}): {:?}",
-            self.next(),
+            self.inc_next(),
             ptr
         );
-        match unsafe { &*self.mem.as_ptr().add(ptr.get_index()) } {
+
+        match unsafe { self.get_from_index(ptr.get_index()) } {
             ArenaEntry::Occupied(value) => Some(value),
             ArenaEntry::Free(_) => panic!("Trying to get a Free arena index: {:?}", ptr),
         }
+    }
+
+    fn get_from_index<'a>(&'a self, index: usize) -> &'a ArenaEntry<T> {
+        unsafe { &*self.mem.as_ptr().add(index) }
     }
 
     // pub fn set(&self, ptr: P, new_value: T) -> T {
@@ -172,7 +198,7 @@ impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
 
     pub fn free(&self, ptr: P) -> T {
         tracing::trace!("FREE: Arena {}, Ptr: {}", self.get_key(), ptr.get_index());
-        assert!(ptr.get_index() < self.next());
+        assert!(ptr.get_index() < self.inc_next());
         self.push_free_index(ptr.get_index());
         unsafe {
             let mem_ptr = self.mem.as_ptr().add(ptr.get_index());
@@ -187,9 +213,17 @@ impl<T: ArenaValue<P>, P: ArenaPtr> RawArena<T, P> {
             }
         }
     }
+
+    pub fn iter(&self) -> ArenaPtrIter<T, P> {
+        ArenaPtrIter::new(&self)
+    }
+
+    pub fn values_iter(&self) -> ArenaValueIter<T, P> {
+        ArenaValueIter::new(self.iter())
+    }
 }
 
-impl<T: ArenaValue<P>, P: ArenaPtr> Drop for RawArena<T, P> {
+impl<T: ArenaValue<P>, P: Ptr> Drop for RawArena<T, P> {
     fn drop(&mut self) {
         unsafe {
             // does not need to bring to the stack to
@@ -202,9 +236,57 @@ impl<T: ArenaValue<P>, P: ArenaPtr> Drop for RawArena<T, P> {
     }
 }
 
-impl ArenaValue<SimplePtr> for usize {
-    fn to_ptr(&self, index: usize) -> SimplePtr {
-        SimplePtr { index }
+impl ArenaValue<ArenaPtr> for usize {
+    fn to_ptr(&self, index: usize) -> ArenaPtr {
+        ArenaPtr { index }
+    }
+}
+
+pub struct ArenaPtrIter<'a, T: ArenaValue<P>, P: Ptr> {
+    index: usize,
+    arena: &'a RawArena<T, P>,
+}
+
+impl<'a, T: ArenaValue<P>, P: Ptr> ArenaPtrIter<'a, T, P> {
+    fn new(arena: &'a RawArena<T, P>) -> Self {
+        Self { index: 0, arena }
+    }
+}
+
+impl<'a, T: ArenaValue<P>, P: Ptr> Iterator for ArenaPtrIter<'a, T, P> {
+    type Item = P;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for i in self.index..self.arena.len() {
+            match &self.arena.get_from_index(i) {
+                ArenaEntry::Occupied(value) => {
+                    let ptr = value.to_ptr(i);
+                    self.index = i + 1;
+                    return Some(ptr);
+                }
+                ArenaEntry::Free(_) => (),
+            };
+        }
+        None
+    }
+}
+
+pub struct ArenaValueIter<'a, T: ArenaValue<P>, P: Ptr> {
+    iter: ArenaPtrIter<'a, T, P>,
+}
+
+impl<'a, T: ArenaValue<P>, P: Ptr> ArenaValueIter<'a, T, P> {
+    fn new(iter: ArenaPtrIter<'a, T, P>) -> Self {
+        Self { iter }
+    }
+}
+
+impl<'a, T: ArenaValue<P>, P: Ptr> Iterator for ArenaValueIter<'a, T, P> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ptr = self.iter.next().unwrap();
+        self.iter.arena.get(ptr)
     }
 }
 
@@ -227,15 +309,3 @@ mod tests {
         assert_eq!(vec.len(), 0);
     }
 }
-
-// use std::thread::*;
-// thread_local! {
-//     static free: RefCell<Vec<usize>> = RefCell::new(Vec::new())
-// }
-
-// fn t() {
-//     free.with(|f|{
-
-//         f.borrow_mut().push(2);
-//     });
-// }
