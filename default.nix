@@ -13,6 +13,7 @@ pkgs.mkShell {
     pkgs.rustup
     pkgs.linuxKernel.packages.linux_6_1.perf
     pkgs.hotspot
+    pkgs.rust-cbindgen
   ];
   RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
 }
