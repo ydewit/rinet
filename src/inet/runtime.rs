@@ -2,10 +2,7 @@ use std::{sync::atomic::AtomicUsize, time::Instant};
 
 use crate::inet::var::{PVarPtrBuffer, Var};
 
-use rayon::{
-    prelude::{ParallelDrainRange, ParallelIterator},
-    Scope,
-};
+use rayon::Scope;
 use tracing::{debug, info};
 
 use super::{
@@ -191,7 +188,7 @@ impl<'a> Runtime<'a> {
         // info!("Rule: {}", rule.display(symbols, heap));
         // preallocate bound vars (TODO can we allocate in consecutive indexes to simplify rewrite?)
         // let bvars = net.alloc_bvars(rule.get_bvar_count());
-        let mut bvars = self.new_bvar_buffer(symbols, heap, rule.get_bvar_count());
+        let mut bvars = self.new_bvar_buffer(heap, rule.get_bvar_count());
 
         // interpret rule
         for rule_eqn_ptr in rule.body() {
@@ -715,7 +712,6 @@ impl<'a> Runtime<'a> {
 
     pub(crate) fn new_bvar_buffer(
         &self,
-        symbols: &SymbolBook,
         heap: &Heap<NetF>,
         bvar_count: u8,
     ) -> PVarPtrBuffer {
